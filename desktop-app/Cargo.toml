@@ -1,0 +1,15 @@
+[package]
+name = "desktop-app"
+version = "0.1.0"
+edition = "2024"
+authors = ["Oscar Sanchez <oscarricardosan@gmail.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+eframe = "0.33.3"
+egui_extras = { version = "0.33", features = ["image"] }
+rfd = "0.17"
+local-ip-address = "0.6"
+serde = { version = "1", features = ["derive"] }
+ssh2 = "0.9"
+toml = "0.8"

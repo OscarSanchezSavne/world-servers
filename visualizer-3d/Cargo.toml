@@ -1,0 +1,9 @@
+[package]
+name = "visualizer-3d"
+version = "0.1.0"
+edition = "2024"
+authors = ["Oscar Sanchez <oscarricardosan@gmail.com>"]
+license = "Apache-2.0"
+
+[dependencies]
+bevy = "0.18.1"

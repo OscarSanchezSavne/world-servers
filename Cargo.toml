@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "desktop-app",
+    "agent-bin", "visualizer-3d",
+]
