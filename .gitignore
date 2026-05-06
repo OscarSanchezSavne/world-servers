@@ -1,4 +1,14 @@
+# Rust
 /target
-*.toml
-!Cargo.toml
-!Cargo.lock
+
+# Config files (user-specific, generated at runtime)
+servers.toml
+config.toml
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
