@@ -25,7 +25,6 @@ impl Lang {
             Lang::Es => Strings::es(),
         }
     }
-
 }
 
 pub struct Strings {
@@ -63,11 +62,8 @@ pub struct Strings {
     pub setup_warning: &'static str,
 
     // Connection result
-    pub conn_success: String,
-    pub retry: &'static str,
-    pub accept: &'static str,
+    pub close: &'static str,
 
-    // Local storage note
     pub local_storage_note: &'static str,
 
     // Top bar
@@ -96,6 +92,36 @@ pub struct Strings {
     // Footer
     pub footer: &'static str,
 
+    // Actions popup
+    pub actions_title: &'static str,
+    pub actions_server_prefix: &'static str,
+    pub delete_server_btn: &'static str,
+
+    // Install agent
+    pub install_title: &'static str,
+    pub install_agent_btn: &'static str,
+    pub install_cancel: &'static str,
+    pub install_log_copy: &'static str,
+    pub install_log_mkdir: &'static str,
+    pub install_log_config: &'static str,
+    pub install_log_service: &'static str,
+    pub install_log_enable: &'static str,
+    pub install_log_done: &'static str,
+    pub col_actions: &'static str,
+    pub install_popup_warning: &'static str,
+    pub install_log_failed: &'static str,
+    pub install_log_connecting: &'static str,
+    pub install_log_connected: &'static str,
+    pub install_log_scp_ok: &'static str,
+    pub install_log_mkdir_ok: &'static str,
+    pub install_log_config_ok: &'static str,
+    pub install_log_service_ok: &'static str,
+    pub install_log_scp_failed: &'static str,
+    pub install_log_mkdir_failed: &'static str,
+    pub install_log_config_failed: &'static str,
+    pub install_log_service_failed: &'static str,
+    pub install_log_enable_failed: &'static str,
+
     // Validation error templates — use helper methods to fill placeholders
     pub err_id_required: &'static str,
     pub err_ip_required: &'static str,
@@ -122,7 +148,7 @@ impl Strings {
             passphrase: "Passphrase:",
             use_passphrase_label: "Key uses a passphrase",
             cancel: "Cancel",
-            deploy_agent: "Deploy agent",
+            deploy_agent: "Create",
 
             hint_server_id: "web-server",
             hint_ssh_key: "~/.ssh/id_rsa",
@@ -136,9 +162,7 @@ impl Strings {
             setup_save: "Save",
             setup_warning: "⚠ This IP is not a private address. It is recommended to use a secure network (e.g., WireGuard).",
 
-            conn_success: "✅ Connection successful".into(),
-            retry: "Retry",
-            accept: "Accept",
+            close: "Close",
             local_storage_note: "This information is stored locally and will not be transmitted or shared outside this device.",
 
             register_btn: "+ Register server",
@@ -160,6 +184,34 @@ impl Strings {
             unknown: "—",
 
             footer: "Made with love by Savne · info@savne.net",
+
+            actions_title: "Actions",
+            actions_server_prefix: "Server",
+            delete_server_btn: "Delete server",
+
+            install_title: "Install agent",
+            install_agent_btn: "Install agent",
+            install_cancel: "Cancel",
+            install_log_copy: "Copying agent binary...",
+            install_log_mkdir: "Creating directories...",
+            install_log_config: "Writing agent configuration...",
+            install_log_service: "Installing systemd service...",
+            install_log_enable: "Enabling service (systemctl enable)...",
+            install_log_done: "Agent installed and enabled (not started)",
+            install_log_failed: "Install failed: {e}",
+            col_actions: "Actions",
+            install_popup_warning: "Configure central host first in footer settings",
+            install_log_connecting: "Connecting to {ip}...",
+            install_log_connected: "Connected",
+            install_log_scp_ok: "Binary copied",
+            install_log_mkdir_ok: "Directories created",
+            install_log_config_ok: "Config written",
+            install_log_service_ok: "Service file created",
+            install_log_scp_failed: "SCP failed: {e}",
+            install_log_mkdir_failed: "mkdir failed: {e}",
+            install_log_config_failed: "Config write failed: {e}",
+            install_log_service_failed: "Service file failed: {e}",
+            install_log_enable_failed: "systemctl enable failed: {e}",
 
             err_id_required: "Server ID is required.",
             err_ip_required: "IP address is required.",
@@ -186,7 +238,7 @@ impl Strings {
             passphrase: "Contraseña:",
             use_passphrase_label: "La clave usa contraseña",
             cancel: "Cancelar",
-            deploy_agent: "Desplegar agente",
+            deploy_agent: "Crear",
 
             hint_server_id: "web-server",
             hint_ssh_key: "~/.ssh/id_rsa",
@@ -200,9 +252,7 @@ impl Strings {
             setup_save: "Guardar",
             setup_warning: "⚠ Esta IP no es una dirección privada. Se recomienda usar una red segura (ej. WireGuard).",
 
-            conn_success: "✅ Conexión exitosa".into(),
-            retry: "Reintentar",
-            accept: "Aceptar",
+            close: "Cerrar",
             local_storage_note: "Esta información se almacena localmente y no será transmitida ni compartida fuera de este dispositivo.",
 
             register_btn: "+ Registrar servidor",
@@ -224,6 +274,34 @@ impl Strings {
             unknown: "—",
 
             footer: "Hecho con amor por Savne · info@savne.net",
+
+            actions_title: "Acciones",
+            actions_server_prefix: "Servidor",
+            delete_server_btn: "Eliminar servidor",
+
+            install_title: "Instalar agente",
+            install_agent_btn: "Instalar agente",
+            install_cancel: "Cancelar",
+            install_log_copy: "Copiando binario del agente...",
+            install_log_mkdir: "Creando directorios...",
+            install_log_config: "Escribiendo configuración del agente...",
+            install_log_service: "Instalando servicio systemd...",
+            install_log_enable: "Habilitando servicio (systemctl enable)...",
+            install_log_done: "Agente instalado y habilitado (no iniciado)",
+            install_log_failed: "Instalación fallida: {e}",
+            col_actions: "Acciones",
+            install_popup_warning: "Configure el host central primero en la configuración del footer",
+            install_log_connecting: "Conectando a {ip}...",
+            install_log_connected: "Conectado",
+            install_log_scp_ok: "Binario copiado",
+            install_log_mkdir_ok: "Directorios creados",
+            install_log_config_ok: "Configuración escrita",
+            install_log_service_ok: "Archivo de servicio creado",
+            install_log_scp_failed: "SCP fallido: {e}",
+            install_log_mkdir_failed: "mkdir fallido: {e}",
+            install_log_config_failed: "Escritura de configuración fallida: {e}",
+            install_log_service_failed: "Archivo de servicio fallido: {e}",
+            install_log_enable_failed: "systemctl enable fallido: {e}",
 
             err_id_required: "El ID del servidor es obligatorio.",
             err_ip_required: "La dirección IP es obligatoria.",
@@ -249,5 +327,33 @@ impl Strings {
 
     pub fn err_ip_exists_msg(&self, ip: &str) -> String {
         self.err_ip_exists.replace("{ip}", ip)
+    }
+
+    pub fn install_log_failed(&self, e: &str) -> String {
+        self.install_log_failed.replace("{e}", e)
+    }
+
+    pub fn install_log_connecting(&self, ip: &str) -> String {
+        self.install_log_connecting.replace("{ip}", ip)
+    }
+
+    pub fn install_log_scp_failed(&self, e: &str) -> String {
+        self.install_log_scp_failed.replace("{e}", e)
+    }
+
+    pub fn install_log_mkdir_failed(&self, e: &str) -> String {
+        self.install_log_mkdir_failed.replace("{e}", e)
+    }
+
+    pub fn install_log_config_failed(&self, e: &str) -> String {
+        self.install_log_config_failed.replace("{e}", e)
+    }
+
+    pub fn install_log_service_failed(&self, e: &str) -> String {
+        self.install_log_service_failed.replace("{e}", e)
+    }
+
+    pub fn install_log_enable_failed(&self, e: &str) -> String {
+        self.install_log_enable_failed.replace("{e}", e)
     }
 }

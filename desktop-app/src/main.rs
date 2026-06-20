@@ -4,9 +4,16 @@ use serde::{Deserialize, Serialize};
 use ssh::SshClient;
 use std::net::IpAddr;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 mod lang;
 mod ssh;
+
+enum DeployEvent {
+    Log(String),
+    Done(Server),
+    Error(String),
+}
 
 const SERVERS_PATH: &str = "servers.toml";
 const CONFIG_PATH: &str = "config.toml";
@@ -36,6 +43,7 @@ struct Server {
     use_passphrase: bool,
     hostname: String,
     cpu_model: String,
+    cpu_count: u32,
     ram_total_mb: u64,
     pos_x: f32,
     pos_y: f32,
@@ -177,13 +185,18 @@ struct DesktopApp {
     show_setup: bool,
     show_passphrase_modal: bool,
     passphrase_checked: bool,
-    passphrase_keys: Vec<(String, String, Vec<usize>)>, // (key_path, passphrase_input, server_indices)
-    show_update_modal: bool,
+    passphrase_keys: Vec<(String, String, Vec<usize>)>,
     update_running: bool,
     update_delay: u8,
     update_key_idx: usize,
     update_server_idx: usize,
     update_done: bool,
+    initial_refresh: bool,
+    refresh_running: bool,
+    refresh_idx: usize,
+    install_popup_idx: Option<usize>,
+    install_server_idx: usize,
+    install_phase: u8,
     form_ip: String,
     form_ssh_user: String,
     form_ssh_key: String,
@@ -196,15 +209,15 @@ struct DesktopApp {
     setup_port: u16,
     setup_error: String,
     deploy_running: bool,
-    deploy_triggered: bool,
-    deploy_log: Vec<String>,
     deploy_success: bool,
     deploy_failed: bool,
-    deploy_phase: u8,
     deploy_client: Option<ssh::SshClient>,
-    deploy_hostname: String,
-    deploy_cpu_model: String,
-    deploy_ram_mb: u64,
+    progress_log: Vec<String>,
+    progress_running: bool,
+    progress_done: bool,
+    progress_failed: bool,
+    progress_title: String,
+    deploy_queue: Option<Arc<Mutex<Vec<DeployEvent>>>>,
     servers: Vec<Server>,
     local_ips: Vec<String>,
     config: AppConfig,
@@ -238,12 +251,17 @@ impl DesktopApp {
             show_passphrase_modal: false,
             passphrase_checked: false,
             passphrase_keys: Vec::new(),
-            show_update_modal: false,
             update_running: false,
             update_delay: 0,
             update_key_idx: 0,
             update_server_idx: 0,
             update_done: false,
+            initial_refresh: false,
+            refresh_running: false,
+            refresh_idx: 0,
+            install_popup_idx: None,
+            install_server_idx: 0,
+            install_phase: 0,
             form_ip: String::new(),
             form_ssh_user: String::new(),
             form_ssh_key: String::new(),
@@ -256,15 +274,15 @@ impl DesktopApp {
             setup_port: 9876,
             setup_error: String::new(),
             deploy_running: false,
-            deploy_triggered: false,
-            deploy_log: Vec::new(),
             deploy_success: false,
             deploy_failed: false,
-            deploy_phase: 0,
             deploy_client: None,
-            deploy_hostname: String::new(),
-            deploy_cpu_model: String::new(),
-            deploy_ram_mb: 0,
+            progress_log: Vec::new(),
+            progress_running: false,
+            progress_done: false,
+            progress_failed: false,
+            progress_title: String::new(),
+            deploy_queue: None,
             servers,
             local_ips,
             config,
@@ -284,15 +302,18 @@ impl DesktopApp {
         self.form_error.clear();
         self.form_ip_warning.clear();
         self.deploy_running = false;
-        self.deploy_triggered = false;
-        self.deploy_log.clear();
-        self.deploy_phase = 0;
         self.deploy_client = None;
-        self.deploy_hostname.clear();
-        self.deploy_cpu_model.clear();
-        self.deploy_ram_mb = 0;
         self.deploy_success = false;
         self.deploy_failed = false;
+        self.deploy_queue = None;
+    }
+
+    fn reset_progress(&mut self) {
+        self.progress_running = false;
+        self.progress_done = false;
+        self.progress_failed = false;
+        self.progress_log.clear();
+        self.progress_title.clear();
     }
 
     fn start_deploy(&mut self) {
@@ -324,26 +345,118 @@ impl DesktopApp {
         if self.servers.iter().any(|s| s.id == id) { self.form_error = t.err_id_exists_msg(&id); return; }
         if self.servers.iter().any(|s| s.ip == ip) { self.form_error = t.err_ip_exists_msg(&ip); return; }
 
-        self.deploy_log.clear();
+        let passphrase_opt = if self.form_use_passphrase && !self.form_passphrase.is_empty() {
+            Some(self.form_passphrase.clone())
+        } else {
+            None
+        };
+
+        self.progress_log.clear();
+        self.progress_title = t.register_server.to_string();
+        self.progress_running = true;
+        self.progress_done = false;
+        self.progress_failed = false;
         self.deploy_success = false;
         self.deploy_failed = false;
         self.form_error.clear();
         self.deploy_running = true;
-        self.deploy_triggered = true;
-        self.deploy_phase = 1;
-        self.deploy_client = None;
-        self.deploy_hostname.clear();
-        self.deploy_cpu_model.clear();
-        self.deploy_ram_mb = 0;
+
+        // Close register form immediately — progress modal handles everything
+        self.show_register_form = false;
+
+        let queue: Arc<Mutex<Vec<DeployEvent>>> = Arc::new(Mutex::new(Vec::new()));
+        self.deploy_queue = Some(queue.clone());
+
+        let id_for_thread = id.clone();
+        let ip_for_thread = ip.clone();
+        std::thread::spawn(move || {
+            queue.lock().unwrap().push(DeployEvent::Log(format!("Connecting to {}...", ip_for_thread)));
+            match SshClient::connect(&ip_for_thread, &user, &key, passphrase_opt.as_deref()) {
+                Ok(client) => {
+                    queue.lock().unwrap().push(DeployEvent::Log("Connected".into()));
+
+                    let mut hostname = String::new();
+                    let mut cpu_model = String::new();
+                    let mut cpu_count: u32 = 0;
+                    let mut ram_mb: u64 = 0;
+
+                    queue.lock().unwrap().push(DeployEvent::Log("Fetching hostname...".into()));
+                    match client.exec("hostname") {
+                        Ok(h) => {
+                            hostname = h.clone();
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  {h}")));
+                        }
+                        Err(e) => {
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  warn: {e}")));
+                        }
+                    }
+
+                    queue.lock().unwrap().push(DeployEvent::Log("Fetching CPU model...".into()));
+                    match client.exec(r#"grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | sed 's/^ //'"#) {
+                        Ok(c) => {
+                            cpu_model = c.clone();
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  {c}")));
+                        }
+                        Err(e) => {
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  warn: {e}")));
+                        }
+                    }
+                    match client.exec("nproc") {
+                        Ok(n) => {
+                            cpu_count = n.trim().parse().unwrap_or(0);
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  {} CPUs", cpu_count)));
+                        }
+                        Err(e) => {
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  warn: {e}")));
+                        }
+                    }
+
+                    queue.lock().unwrap().push(DeployEvent::Log("Fetching RAM...".into()));
+                    match client.exec(r#"grep MemTotal /proc/meminfo | awk '{print $2}'"#) {
+                        Ok(r) => {
+                            let kb: u64 = r.trim().parse().unwrap_or(0);
+                            ram_mb = kb / 1024;
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  {} MB", ram_mb)));
+                        }
+                        Err(e) => {
+                            queue.lock().unwrap().push(DeployEvent::Log(format!("  warn: {e}")));
+                        }
+                    }
+
+                    queue.lock().unwrap().push(DeployEvent::Log("Saving server data...".into()));
+                    let name = id_for_thread.clone();
+                    let server = Server {
+                        id: id_for_thread,
+                        name,
+                        ip: ip_for_thread,
+                        ssh_user: user,
+                        ssh_key_path: key,
+                        use_passphrase: passphrase_opt.is_some(),
+                        hostname,
+                        cpu_model,
+                        cpu_count,
+                        ram_total_mb: ram_mb,
+                        pos_x: 0.0,
+                        pos_y: 0.0,
+                        pos_z: 0.0,
+                    };
+                    queue.lock().unwrap().push(DeployEvent::Log("Done".into()));
+                    queue.lock().unwrap().push(DeployEvent::Done(server));
+                }
+                Err(e) => {
+                    queue.lock().unwrap().push(DeployEvent::Log(format!("Connection failed: {e}")));
+                    queue.lock().unwrap().push(DeployEvent::Error(format!("SSH connection failed: {e}")));
+                }
+            }
+        });
     }
 
     fn step_update(&mut self) {
         if self.update_key_idx >= self.passphrase_keys.len() {
             self.update_running = false;
             self.update_done = true;
-            self.show_update_modal = true;
-            self.deploy_log.push(String::new());
-            self.deploy_log.push("✅ All servers updated".into());
+            self.progress_done = true;
+            self.progress_running = false;
             return;
         }
 
@@ -371,46 +484,53 @@ impl DesktopApp {
         let key = self.servers[idx].ssh_key_path.clone();
         let name = self.servers[idx].name.clone();
 
-        self.deploy_log.push(format!("🔌 Updating {} ({})...", name, ip));
+        self.progress_log.push(format!("Updating {} ({})...", name, ip));
 
         let hostname_was = self.servers[idx].hostname.clone();
         self.servers[idx].hostname.clear();
 
         if let Ok(client) = SshClient::connect(&ip, &user, &key, Some(&passphrase)) {
-            self.deploy_log.push("✅ Connected".into());
+            self.progress_log.push("Connected".into());
 
-            self.deploy_log.push("📋 Fetching hostname...".into());
+            self.progress_log.push("Fetching hostname...".into());
             match client.exec("hostname") {
                 Ok(h) => {
                     self.servers[idx].hostname = h.clone();
-                    self.deploy_log.push(format!("   → {h}"));
+                    self.progress_log.push(format!("  {h}"));
                 }
                 Err(e) => {
-                    self.deploy_log.push(format!("   ⚠ {e}"));
+                    self.progress_log.push(format!("  warn: {e}"));
                     self.servers[idx].hostname = hostname_was;
                 }
             }
 
-            self.deploy_log.push("📋 Fetching CPU model...".into());
+            self.progress_log.push("Fetching CPU model...".into());
             match client.exec(r#"grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | sed 's/^ //'"#) {
                 Ok(c) => {
                     self.servers[idx].cpu_model = c.clone();
-                    self.deploy_log.push(format!("   → {c}"));
+                    self.progress_log.push(format!("  {c}"));
                 }
-                Err(e) => self.deploy_log.push(format!("   ⚠ {e}")),
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
+            }
+            match client.exec("nproc") {
+                Ok(n) => {
+                    self.servers[idx].cpu_count = n.trim().parse().unwrap_or(0);
+                    self.progress_log.push(format!("  {} CPUs", self.servers[idx].cpu_count));
+                }
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
             }
 
-            self.deploy_log.push("📋 Fetching RAM...".into());
+            self.progress_log.push("Fetching RAM...".into());
             match client.exec(r#"grep MemTotal /proc/meminfo | awk '{print $2}'"#) {
                 Ok(r) => {
                     let kb: u64 = r.trim().parse().unwrap_or(0);
                     self.servers[idx].ram_total_mb = kb / 1024;
-                    self.deploy_log.push(format!("   → {} MB", kb / 1024));
+                    self.progress_log.push(format!("  {} MB", kb / 1024));
                 }
-                Err(e) => self.deploy_log.push(format!("   ⚠ {e}")),
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
             }
         } else {
-            self.deploy_log.push("❌ Connection failed".into());
+            self.progress_log.push("Connection failed".into());
             if self.servers[idx].hostname.is_empty() {
                 self.servers[idx].hostname = hostname_was;
             }
@@ -420,100 +540,216 @@ impl DesktopApp {
         self.update_server_idx += 1;
     }
 
-    fn step_deploy(&mut self) {
-        let id = self.form_server_id.trim().to_string();
-        let ip = self.form_ip.trim().to_string();
-        let user = self.form_ssh_user.trim().to_string();
-        let key = self.form_ssh_key.trim().to_string();
-        let passphrase = if self.form_use_passphrase && !self.form_passphrase.is_empty() {
-            Some(self.form_passphrase.as_str())
-        } else {
-            None
-        };
+    fn step_refresh(&mut self) {
+        // Refresh ONE non-passphrase server per frame, then stop
+        if self.refresh_idx >= self.servers.len() {
+            self.refresh_running = false;
+            self.progress_done = true;
+            self.progress_running = false;
+            return;
+        }
 
-        match self.deploy_phase {
+        let idx = self.refresh_idx;
+        if self.servers[idx].use_passphrase || !self.servers[idx].hostname.is_empty() {
+            self.refresh_idx += 1;
+            return;
+        }
+
+        let ip = self.servers[idx].ip.clone();
+        let user = self.servers[idx].ssh_user.clone();
+        let key = self.servers[idx].ssh_key_path.clone();
+        let name = self.servers[idx].name.clone();
+
+        self.progress_log.push(format!("Fetching {} ({})...", name, ip));
+
+        if let Ok(client) = SshClient::connect(&ip, &user, &key, None) {
+            self.progress_log.push("Connected".into());
+            match client.exec("hostname") {
+                Ok(h) => {
+                    self.servers[idx].hostname = h.clone();
+                    self.progress_log.push(format!("  {h}"));
+                }
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
+            }
+            match client.exec(r#"grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | sed 's/^ //'"#) {
+                Ok(c) => {
+                    self.servers[idx].cpu_model = c.clone();
+                    self.progress_log.push(format!("  {c}"));
+                }
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
+            }
+            match client.exec("nproc") {
+                Ok(n) => {
+                    self.servers[idx].cpu_count = n.trim().parse().unwrap_or(0);
+                    self.progress_log.push(format!("  {} CPUs", self.servers[idx].cpu_count));
+                }
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
+            }
+            match client.exec(r#"grep MemTotal /proc/meminfo | awk '{print $2}'"#) {
+                Ok(r) => {
+                    let kb: u64 = r.trim().parse().unwrap_or(0);
+                    self.servers[idx].ram_total_mb = kb / 1024;
+                    self.progress_log.push(format!("  {} MB", kb / 1024));
+                }
+                Err(e) => self.progress_log.push(format!("  warn: {e}")),
+            }
+        } else {
+            self.progress_log.push("Connection failed".into());
+        }
+
+        save_servers(&ServersConfig { servers: self.servers.clone() });
+        self.refresh_idx += 1;
+    }
+
+    fn start_install(&mut self, idx: usize) {
+        let t = self.t();
+        self.install_server_idx = idx;
+        self.install_phase = 1;
+        self.install_popup_idx = None;
+        self.progress_log.clear();
+        self.progress_title = t.install_title.to_string();
+        self.progress_running = true;
+        self.progress_done = false;
+        self.progress_failed = false;
+    }
+
+    fn step_install(&mut self) {
+        let idx = self.install_server_idx;
+        if idx >= self.servers.len() {
+            self.progress_running = false;
+            return;
+        }
+
+        let t = self.t();
+        let server = self.servers[idx].clone();
+        let ip = server.ip.clone();
+        let user = server.ssh_user.clone();
+        let key = server.ssh_key_path.clone();
+
+        match self.install_phase {
             1 => {
-                // ── Connect ──
-                self.deploy_log.push(format!("🔌 Connecting to {}...", ip));
-                match SshClient::connect(&ip, &user, &key, passphrase) {
+                self.progress_log.push(t.install_log_connecting(&ip));
+                match SshClient::connect(&ip, &user, &key, None) {
                     Ok(client) => {
-                        self.deploy_log.push("✅ Connected".into());
+                        self.progress_log.push(t.install_log_connected.into());
                         self.deploy_client = Some(client);
-                        self.deploy_phase = 2;
+                        self.install_phase = 2;
                     }
                     Err(e) => {
-                        self.deploy_log.push(format!("❌ Connection failed: {e}"));
-                        self.form_error = format!("SSH connection failed: {e}");
-                        self.deploy_running = false;
-                        self.deploy_failed = true;
+                        self.progress_log.push(t.install_log_failed(&e));
+                        self.progress_running = false;
+                        self.progress_failed = true;
                     }
                 }
             }
             2 => {
-                // ── Fetch hostname ──
-                self.deploy_log.push("📋 Fetching hostname...".into());
+                self.progress_log.push(t.install_log_copy.into());
+                let agent_bytes = include_bytes!("../assets/agent-bin");
                 if let Some(ref client) = self.deploy_client {
-                    match client.exec("hostname") {
-                        Ok(h) => {
-                            self.deploy_hostname = h.clone();
-                            self.deploy_log.push(format!("   → {h}"));
+                    match client.scp_send(
+                        "/usr/local/bin/worldservers-agent",
+                        agent_bytes,
+                        0o755,
+                    ) {
+                        Ok(_) => {
+                            self.progress_log.push(t.install_log_scp_ok.into());
+                            self.install_phase = 3;
                         }
-                        Err(e) => self.deploy_log.push(format!("   ⚠ {e}")),
+                        Err(e) => {
+                            self.progress_log.push(t.install_log_scp_failed(&e));
+                            self.progress_running = false;
+                            self.progress_failed = true;
+                        }
                     }
                 }
-                self.deploy_phase = 3;
             }
             3 => {
-                // ── Fetch CPU model ──
-                self.deploy_log.push("📋 Fetching CPU model...".into());
+                self.progress_log.push(t.install_log_mkdir.into());
                 if let Some(ref client) = self.deploy_client {
-                    match client.exec(r#"grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | sed 's/^ //'"#) {
-                        Ok(c) => {
-                            self.deploy_cpu_model = c.clone();
-                            self.deploy_log.push(format!("   → {c}"));
+                    match client.exec("sudo mkdir -p /etc/worldservers") {
+                        Ok(_) => {
+                            self.progress_log.push(t.install_log_mkdir_ok.into());
+                            self.install_phase = 4;
                         }
-                        Err(e) => self.deploy_log.push(format!("   ⚠ {e}")),
+                        Err(e) => {
+                            self.progress_log.push(t.install_log_mkdir_failed(&e));
+                            self.progress_running = false;
+                            self.progress_failed = true;
+                        }
                     }
                 }
-                self.deploy_phase = 4;
             }
             4 => {
-                // ── Fetch RAM ──
-                self.deploy_log.push("📋 Fetching RAM...".into());
+                self.progress_log.push(t.install_log_config.into());
+                let config_body = format!(
+                    "central_host = \"{host}\"\ncentral_port = {port}\nserver_id   = \"{sid}\"\naccept_unsecure = false\n",
+                    host = self.config.central_host,
+                    port = self.config.central_port,
+                    sid = server.id,
+                );
                 if let Some(ref client) = self.deploy_client {
-                    match client.exec(r#"grep MemTotal /proc/meminfo | awk '{print $2}'"#) {
-                        Ok(r) => {
-                            let kb: u64 = r.trim().parse().unwrap_or(0);
-                            self.deploy_ram_mb = kb / 1024;
-                            self.deploy_log.push(format!("   → {} MB", self.deploy_ram_mb));
+                    match client.write_sudo_file("/etc/worldservers/agent.conf", config_body.as_bytes()) {
+                        Ok(_) => {
+                            self.progress_log.push(t.install_log_config_ok.into());
+                            self.install_phase = 5;
                         }
-                        Err(e) => self.deploy_log.push(format!("   ⚠ {e}")),
+                        Err(e) => {
+                            self.progress_log.push(t.install_log_config_failed(&e));
+                            self.progress_running = false;
+                            self.progress_failed = true;
+                        }
                     }
                 }
-                self.deploy_phase = 5;
             }
             5 => {
-                // ── Save ──
-                self.deploy_log.push("💾 Saving server data...".into());
-                let server = Server {
-                    id: id.clone(), name: id, ip: ip.clone(),
-                    ssh_user: user, ssh_key_path: key,
-                    use_passphrase: self.form_use_passphrase,
-                    hostname: self.deploy_hostname.clone(),
-                    cpu_model: self.deploy_cpu_model.clone(),
-                    ram_total_mb: self.deploy_ram_mb,
-                    pos_x: 0.0, pos_y: 0.0, pos_z: 0.0,
-                };
-                self.servers.push(server);
-                save_servers(&ServersConfig { servers: self.servers.clone() });
+                self.progress_log.push(t.install_log_service.into());
+                let svc = "[Unit]
+Description=WorldServers Agent
+After=network.target
 
-                self.deploy_phase = 6;
+[Service]
+ExecStart=/usr/local/bin/worldservers-agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+";
+                if let Some(ref client) = self.deploy_client {
+                    match client.write_sudo_file("/etc/systemd/system/worldservers-agent.service", svc.as_bytes()) {
+                        Ok(_) => {
+                            self.progress_log.push(t.install_log_service_ok.into());
+                            self.install_phase = 6;
+                        }
+                        Err(e) => {
+                            self.progress_log.push(t.install_log_service_failed(&e));
+                            self.progress_running = false;
+                            self.progress_failed = true;
+                        }
+                    }
+                }
             }
             6 => {
-                // ── Done ──
+                self.progress_log.push(t.install_log_enable.into());
+                if let Some(ref client) = self.deploy_client {
+                    match client.exec("sudo systemctl enable worldservers-agent") {
+                        Ok(out) => {
+                            self.progress_log.push(out);
+                            self.install_phase = 7;
+                        }
+                        Err(e) => {
+                            self.progress_log.push(t.install_log_enable_failed(&e));
+                            self.progress_running = false;
+                            self.progress_failed = true;
+                        }
+                    }
+                }
+            }
+            7 => {
+                self.progress_log.push(t.install_log_done.into());
                 self.deploy_client = None;
-                self.deploy_running = false;
-                self.deploy_success = true;
+                self.progress_running = false;
+                self.progress_done = true;
             }
             _ => {}
         }
@@ -544,15 +780,53 @@ fn is_private_ip(ip: &str) -> bool {
 
 impl eframe::App for DesktopApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // ── Step SSH deployment (one phase per frame, UI renders between steps) ──
-        if self.deploy_running && !self.deploy_success && !self.deploy_failed {
-            if self.deploy_triggered {
-                self.deploy_triggered = false;
-                ctx.request_repaint();
-            } else if self.deploy_phase > 0 {
-                self.step_deploy();
+        // ── Poll SSH deployment thread ──
+        if let Some(ref queue) = self.deploy_queue {
+            let mut events: Vec<DeployEvent> = Vec::new();
+            if let Ok(mut guard) = queue.lock() {
+                events.append(&mut *guard);
+            }
+            if !events.is_empty() {
+                for event in events {
+                    match event {
+                        DeployEvent::Log(msg) => {
+                            self.progress_log.push(msg);
+                        }
+                        DeployEvent::Done(server) => {
+                            self.servers.push(server);
+                            save_servers(&ServersConfig { servers: self.servers.clone() });
+                            self.deploy_running = false;
+                            self.deploy_success = true;
+                            self.progress_done = true;
+                            self.progress_running = false;
+                            self.deploy_queue = None;
+                            break;
+                        }
+                        DeployEvent::Error(msg) => {
+                            self.form_error = msg;
+                            self.deploy_running = false;
+                            self.deploy_failed = true;
+                            self.progress_failed = true;
+                            self.progress_running = false;
+                            self.deploy_queue = None;
+                            break;
+                        }
+                    }
+                }
                 ctx.request_repaint();
             }
+        }
+
+        // ── Step install agent (one phase per frame) ──
+        if self.progress_running && self.install_phase > 0 && !self.progress_done && !self.progress_failed {
+            self.step_install();
+            ctx.request_repaint();
+        }
+
+        // ── Step refresh (fetch data for servers without passphrase) ──
+        if self.refresh_running && self.progress_running {
+            self.step_refresh();
+            ctx.request_repaint();
         }
 
         // ── Step server updates (delay frames for UI to paint, then one server per frame) ──
@@ -576,6 +850,97 @@ impl eframe::App for DesktopApp {
         let error_color = egui::Color32::from_rgb(230, 80, 80);
         let bg_panel    = egui::Color32::from_rgb(11,  17, 27);
 
+        // ── Unified progress modal ──
+        if self.progress_running || self.progress_done || self.progress_failed {
+            let mut open = true;
+            let mut close_clicked = false;
+            let center = ctx.content_rect().center();
+            egui::Window::new(&self.progress_title)
+                .id("progress_modal".into())
+                .open(&mut open)
+                .default_pos(center - egui::vec2(240.0, 175.0))
+                .fixed_size([480.0, 350.0])
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    if !self.progress_log.is_empty() {
+                        ui.add_space(8.0);
+                        egui::Frame::NONE
+                            .fill(egui::Color32::from_rgb(5, 8, 14))
+                            .corner_radius(4)
+                            .inner_margin(egui::Margin::symmetric(4, 6))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                egui::ScrollArea::vertical()
+                                    .max_height(260.0)
+                                    .show(ui, |ui| {
+                                        for line in &self.progress_log {
+                                            if line.is_empty() {
+                                                ui.add_space(2.0);
+                                                continue;
+                                            }
+                                            if line.starts_with("warn:") || line.starts_with("  warn:") {
+                                                ui.label(
+                                                    egui::RichText::new(line)
+                                                        .size(11.0)
+                                                        .color(egui::Color32::from_rgb(230, 190, 50)),
+                                                );
+                                            } else {
+                                                ui.label(
+                                                    egui::RichText::new(line)
+                                                        .size(11.0)
+                                                        .color(gray_soft),
+                                                );
+                                            }
+                                        }
+                                    });
+                            });
+                    }
+
+                    ui.add_space(8.0);
+                    if self.progress_done || self.progress_failed {
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let close_btn = egui::Button::new(
+                                    egui::RichText::new(t.close).color(white_cold),
+                                )
+                                .fill(accent_mid)
+                                .corner_radius(4.0);
+                                if ui.add(close_btn).clicked() {
+                                    close_clicked = true;
+                                }
+                            });
+                        });
+                    } else if self.deploy_running {
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let cancel_btn = egui::Button::new(
+                                    egui::RichText::new(t.cancel).color(white_cold),
+                                )
+                                .fill(error_color)
+                                .corner_radius(4.0);
+                                if ui.add(cancel_btn).clicked() {
+                                    close_clicked = true;
+                                }
+                            });
+                        });
+                    }
+                    ui.add_space(6.0);
+                });
+
+            if !open || close_clicked {
+                if self.deploy_running {
+                    self.deploy_running = false;
+                    self.deploy_failed = true;
+                    self.deploy_queue = None;
+                }
+                self.reset_progress();
+                self.deploy_failed = false;
+                self.deploy_success = false;
+                self.form_error.clear();
+            }
+        }
+
         // ── Setup modal (first launch) ──
         if self.show_setup {
             let mut open = true;
@@ -595,7 +960,6 @@ impl eframe::App for DesktopApp {
                     );
                     ui.add_space(12.0);
 
-                    // ── Detected IPs ──
                     ui.label(
                         egui::RichText::new(t.setup_select_ip)
                             .size(12.0)
@@ -610,17 +974,13 @@ impl eframe::App for DesktopApp {
                                 let selected = self.setup_central_host == *ip;
                                 let btn = egui::Button::new(ip)
                                     .fill(if selected { egui::Color32::from_rgb(22, 132, 255) } else { egui::Color32::TRANSPARENT });
-                                if ui
-                                    .add_sized([ui.available_width(), 22.0], btn)
-                                    .clicked()
-                                {
+                                if ui.add_sized([ui.available_width(), 22.0], btn).clicked() {
                                     self.setup_central_host = ip.clone();
                                 }
                             }
                         });
                     ui.add_space(8.0);
 
-                    // ── Manual input ──
                     ui.label(
                         egui::RichText::new(t.setup_manual)
                             .size(12.0)
@@ -632,25 +992,18 @@ impl eframe::App for DesktopApp {
                                 .desired_width(200.0),
                         );
                         ui.label(
-                            egui::RichText::new("Port:")
-                                .size(12.0)
-                                .color(gray_soft),
+                            egui::RichText::new("Port:").size(12.0).color(gray_soft),
                         );
                         let mut port_str = self.setup_port.to_string();
-                        if ui
-                            .add(
-                                egui::TextEdit::singleline(&mut port_str)
-                                    .desired_width(60.0),
-                            )
-                            .changed()
-                        {
+                        if ui.add(
+                            egui::TextEdit::singleline(&mut port_str).desired_width(60.0),
+                        ).changed() {
                             if let Ok(p) = port_str.parse::<u16>() {
                                 self.setup_port = p;
                             }
                         }
                     });
 
-                    // ── IP warning ──
                     if !self.setup_central_host.is_empty() {
                         if let Ok(addr) = self.setup_central_host.trim().parse::<IpAddr>() {
                             let is_private = match addr {
@@ -676,13 +1029,10 @@ impl eframe::App for DesktopApp {
                         }
                     }
 
-                    // ── Error ──
                     if !self.setup_error.is_empty() {
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(&self.setup_error)
-                                .size(12.0)
-                                .color(error_color),
+                            egui::RichText::new(&self.setup_error).size(12.0).color(error_color),
                         );
                     }
 
@@ -726,11 +1076,36 @@ impl eframe::App for DesktopApp {
                     key_map.entry(srv.ssh_key_path.clone()).or_default().push(i);
                 }
             }
-            if !key_map.is_empty() {
-                self.passphrase_keys = key_map.into_iter()
+            let needs_update: std::collections::BTreeMap<String, Vec<usize>> = key_map.into_iter()
+                .filter(|(_, indices)| {
+                    indices.iter().any(|&i| i < self.servers.len() && self.servers[i].hostname.is_empty())
+                })
+                .collect();
+            if !needs_update.is_empty() {
+                self.passphrase_keys = needs_update.into_iter()
                     .map(|(k, indices)| (k, String::new(), indices))
                     .collect();
                 self.show_passphrase_modal = true;
+            }
+        }
+
+        // ── Initial refresh: load data for servers without passphrase ──
+        if !self.show_setup && self.passphrase_checked && !self.initial_refresh
+            && !self.show_passphrase_modal && !self.update_running
+        {
+            self.initial_refresh = true;
+            let has_pending = self.servers.iter().any(|s| {
+                !s.use_passphrase && s.hostname.is_empty()
+            });
+            if has_pending {
+                self.progress_log.clear();
+                self.progress_title = "Refreshing servers".into();
+                self.progress_log.push("Fetching server data...".into());
+                self.progress_running = true;
+                self.progress_done = false;
+                self.progress_failed = false;
+                self.refresh_running = true;
+                self.refresh_idx = 0;
             }
         }
 
@@ -748,24 +1123,21 @@ impl eframe::App for DesktopApp {
                     ui.add_space(6.0);
                     ui.label(
                         egui::RichText::new("Enter passphrases for the following SSH keys:")
-                            .size(12.0)
-                            .color(gray_muted),
+                            .size(12.0).color(gray_muted),
                     );
                     ui.add_space(8.0);
 
                     let mut ready = true;
-                    let entries_len = self.passphrase_keys.len();
-                    let mut idx = 0;
-                    while idx < entries_len {
-                        let (key_path, pass, ref indices) = self.passphrase_keys[idx].clone();
+                    for idx in 0..self.passphrase_keys.len() {
+                        let entry = &mut self.passphrase_keys[idx];
+                        let key_path = &entry.0;
+                        let pass = &mut entry.1;
+                        let indices = &entry.2;
                         ui.horizontal(|ui| {
                             ui.set_width(ui.available_width());
-                            ui.label(
-                                egui::RichText::new(&key_path).size(11.0).color(gray_soft),
-                            );
-                            let pass_ptr = &mut self.passphrase_keys[idx].1;
+                            ui.label(egui::RichText::new(key_path).size(11.0).color(gray_soft));
                             ui.add(
-                                egui::TextEdit::singleline(pass_ptr)
+                                egui::TextEdit::singleline(pass)
                                     .password(true)
                                     .hint_text(egui::RichText::new("Passphrase").color(hint_color))
                                     .desired_width(160.0),
@@ -773,15 +1145,13 @@ impl eframe::App for DesktopApp {
                             if pass.is_empty() {
                                 ready = false;
                             }
-                            let count = indices.len();
                             ui.label(
-                                egui::RichText::new(format!("({} server{})", count, if count > 1 { "s" } else { "" }))
-                                    .size(10.0)
-                                    .color(gray_muted),
+                                egui::RichText::new(format!("({} server{})", indices.len(),
+                                    if indices.len() > 1 { "s" } else { "" }))
+                                    .size(10.0).color(gray_muted),
                             );
                         });
                         ui.add_space(4.0);
-                        idx += 1;
                     }
 
                     ui.add_space(12.0);
@@ -793,9 +1163,12 @@ impl eframe::App for DesktopApp {
                             .fill(accent_mid)
                             .corner_radius(4.0);
                             if ui.add(accept_btn).clicked() && ready {
-                                self.deploy_log.clear();
-                                self.deploy_log.push("🔑 Starting server updates...".into());
-                                self.show_update_modal = true;
+                                self.progress_log.clear();
+                                self.progress_title = "Updating servers".into();
+                                self.progress_log.push("Starting server updates...".into());
+                                self.progress_running = true;
+                                self.progress_done = false;
+                                self.progress_failed = false;
                                 self.update_running = true;
                                 self.update_delay = 3;
                                 self.update_key_idx = 0;
@@ -813,89 +1186,6 @@ impl eframe::App for DesktopApp {
             }
         }
 
-        // ── Update progress modal ──
-        if self.show_update_modal {
-            let mut open = true;
-            let up_center = ctx.content_rect().center();
-            egui::Window::new("Updating servers")
-                .id("update_modal".into())
-                .open(&mut open)
-                .default_pos(up_center - egui::vec2(230.0, 175.0))
-                .fixed_size([460.0, 350.0])
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    if !self.deploy_log.is_empty() {
-                        ui.add_space(8.0);
-                        egui::Frame::NONE
-                            .fill(egui::Color32::from_rgb(5, 8, 14))
-                            .corner_radius(4)
-                            .inner_margin(egui::Margin::symmetric(4, 6))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                egui::ScrollArea::vertical()
-                                    .max_height(280.0)
-                                    .show(ui, |ui| {
-                                        for line in &self.deploy_log {
-                                            if line.is_empty() {
-                                                ui.add_space(2.0);
-                                                continue;
-                                            }
-                                            if line.starts_with("✅ ") {
-                                                ui.label(egui::RichText::new(line).size(11.0)
-                                                    .color(egui::Color32::from_rgb(70, 200, 120)));
-                                            } else if line.starts_with("❌") || line.starts_with("⚠") {
-                                                ui.label(egui::RichText::new(line).size(11.0)
-                                                    .color(egui::Color32::from_rgb(230, 190, 50)));
-                                            } else {
-                                                ui.label(egui::RichText::new(line).size(11.0).color(gray_soft));
-                                            }
-                                        }
-                                    });
-                            });
-                    }
-
-                    ui.add_space(8.0);
-                    if self.update_done {
-                        ui.label(
-                            egui::RichText::new("✅ Update complete")
-                                .size(13.0)
-                                .color(egui::Color32::from_rgb(70, 200, 120)),
-                        );
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let close_btn = egui::Button::new(
-                                    egui::RichText::new("Close").color(white_cold),
-                                )
-                                .fill(accent_mid)
-                                .corner_radius(4.0);
-                                if ui.add(close_btn).clicked() {
-                                    self.show_update_modal = false;
-                                    self.update_done = false;
-                                    self.update_running = false;
-                                    self.deploy_log.clear();
-                                }
-                            });
-                        });
-                    } else {
-                        ui.label(
-                            egui::RichText::new("⏳ Updating servers...")
-                                .size(12.0)
-                                .color(gray_muted),
-                        );
-                    }
-                    ui.add_space(6.0);
-                });
-
-            if !open {
-                self.show_update_modal = false;
-                self.update_done = false;
-                self.update_running = false;
-                self.deploy_log.clear();
-            }
-        }
-
         // ── Register server modal ──
         if self.show_register_form {
             let mut open = true;
@@ -909,18 +1199,14 @@ impl eframe::App for DesktopApp {
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.set_min_size([460.0, 350.0].into());
-                    let deploy_active = self.deploy_running || self.deploy_success || self.deploy_failed;
+                    let deploy_active = self.deploy_running || self.deploy_success;
 
                     if !deploy_active {
                         ui.add_space(8.0);
                         ui.label(
-                            egui::RichText::new(t.enter_details)
-                                .size(13.0)
-                                .color(gray_muted),
+                            egui::RichText::new(t.enter_details).size(13.0).color(gray_muted),
                         );
                         ui.add_space(6.0);
-
-                        // ── Secure network recommendation ──
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(t.secure_network)
@@ -929,15 +1215,13 @@ impl eframe::App for DesktopApp {
                             );
                             ui.label(
                                 egui::RichText::new(t.secure_network_msg)
-                                    .size(11.0)
-                                    .color(gray_muted),
+                                    .size(11.0).color(gray_muted),
                             );
                         });
                         ui.add_space(10.0);
                     }
 
                     if !deploy_active {
-                        // ── Form grid (only when idle) ──
                         egui::Grid::new("register_grid")
                             .num_columns(2)
                             .spacing([8.0, 8.0])
@@ -952,15 +1236,13 @@ impl eframe::App for DesktopApp {
 
                                 ui.label(egui::RichText::new(t.ip_address).color(gray_soft));
                                 ui.add(
-                                    egui::TextEdit::singleline(&mut self.form_ip)
-                                        .desired_width(200.0),
+                                    egui::TextEdit::singleline(&mut self.form_ip).desired_width(200.0),
                                 );
                                 ui.end_row();
 
                                 ui.label(egui::RichText::new(t.ssh_user).color(gray_soft));
                                 ui.add(
-                                    egui::TextEdit::singleline(&mut self.form_ssh_user)
-                                        .desired_width(200.0),
+                                    egui::TextEdit::singleline(&mut self.form_ssh_user).desired_width(200.0),
                                 );
                                 ui.end_row();
 
@@ -983,15 +1265,13 @@ impl eframe::App for DesktopApp {
                                     if self.form_use_passphrase {
                                         ui.add(
                                             egui::TextEdit::singleline(&mut self.form_passphrase)
-                                                .password(true)
-                                                .desired_width(200.0),
+                                                .password(true).desired_width(200.0),
                                         );
                                     }
                                 });
                                 ui.end_row();
                             });
 
-                        // ── IP warning (dynamic) ──
                         if !self.form_ip.is_empty() {
                             let ip_trimmed = self.form_ip.trim();
                             if !is_private_ip(ip_trimmed) {
@@ -1013,128 +1293,27 @@ impl eframe::App for DesktopApp {
                         }
                     }
 
-                    // ── Error message (from validation or SSH) ──
                     if !self.form_error.is_empty() && !deploy_active {
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(&self.form_error)
-                                .size(12.0)
-                                .color(error_color),
+                            egui::RichText::new(&self.form_error).size(12.0).color(error_color),
                         );
                     }
 
-                    // ── Deploy log ──
-                    if !self.deploy_log.is_empty() {
-                        ui.add_space(8.0);
-                        egui::Frame::NONE
-                            .fill(egui::Color32::from_rgb(5, 8, 14))
-                            .corner_radius(4)
-                            .inner_margin(egui::Margin::symmetric(4, 6))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                egui::ScrollArea::vertical()
-                                    .max_height(120.0)
-                                    .show(ui, |ui| {
-                                    for line in &self.deploy_log {
-                                        if line.is_empty() {
-                                            ui.add_space(2.0);
-                                            continue;
-                                        }
-                                        if line.starts_with("✅ ") || line.starts_with("✔ ") {
-                                            ui.label(
-                                                egui::RichText::new(line)
-                                                    .size(11.0)
-                                                    .color(egui::Color32::from_rgb(70, 200, 120)),
-                                            );
-                                        } else if line.starts_with("❌") || line.starts_with("⚠") {
-                                            ui.label(
-                                                egui::RichText::new(line)
-                                                    .size(11.0)
-                                                    .color(egui::Color32::from_rgb(230, 190, 50)),
-                                            );
-                                        } else {
-                                            ui.label(
-                                                egui::RichText::new(line)
-                                                    .size(11.0)
-                                                    .color(gray_soft),
-                                            );
-                                        }
-                                    }
-                                });
-                        });
-                    }
-
-                    // ── Buttons ──
                     ui.add_space(8.0);
                     if self.deploy_running {
-                        // Still running — no buttons, just wait indicator
                         ui.label(
-                            egui::RichText::new("⏳ Processing...")
-                                .size(12.0)
-                                .color(gray_muted),
+                            egui::RichText::new("Processing...")
+                                .size(12.0).color(gray_muted),
                         );
-                    } else if self.deploy_success {
-                        ui.label(
-                            egui::RichText::new(&t.conn_success)
-                                .size(13.0)
-                                .color(egui::Color32::from_rgb(70, 200, 120)),
-                        );
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let accept_btn = egui::Button::new(
-                                    egui::RichText::new(t.accept).color(white_cold),
-                                )
-                                .fill(accent_mid)
-                                .corner_radius(4.0);
-                                if ui.add(accept_btn).clicked() {
-                                    self.show_register_form = false;
-                                    self.reset_form();
-                                }
-                            });
-                        });
-                    } else if self.deploy_failed {
-                        ui.label(
-                            egui::RichText::new("❌ Connection failed")
-                                .size(13.0)
-                                .color(error_color),
-                        );
-                        ui.add_space(4.0);
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    egui::RichText::new(t.cancel)
-                                        .color(gray_soft),
-                                )
-                                .clicked()
-                            {
-                                self.show_register_form = false;
-                                self.reset_form();
-                            }
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let retry_btn = egui::Button::new(
-                                    egui::RichText::new(t.retry).color(white_cold),
-                                )
-                                .fill(accent_mid)
-                                .corner_radius(4.0);
-                                if ui.add(retry_btn).clicked() {
-                                    self.start_deploy();
-                                }
-                            });
-                        });
                     } else {
                         ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    egui::RichText::new(t.cancel)
-                                        .color(gray_soft),
-                                )
-                                .clicked()
-                            {
+                            if ui.button(
+                                egui::RichText::new(t.cancel).color(gray_soft),
+                            ).clicked() {
                                 self.show_register_form = false;
                                 self.reset_form();
                             }
-
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let deploy_btn = egui::Button::new(
                                     egui::RichText::new(t.deploy_agent).color(white_cold),
@@ -1148,20 +1327,15 @@ impl eframe::App for DesktopApp {
                         });
                     }
 
-                    // ── Local storage note (only when idle) ──
                     if !deploy_active {
                         ui.add_space(12.0);
                         ui.separator();
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("🔒")
-                                    .size(11.0),
-                            );
+                            ui.label(egui::RichText::new("🔒").size(11.0));
                             ui.label(
                                 egui::RichText::new(t.local_storage_note)
-                                    .size(11.0)
-                                    .color(gray_muted),
+                                    .size(11.0).color(gray_muted),
                             );
                         });
                         ui.add_space(8.0);
@@ -1171,6 +1345,7 @@ impl eframe::App for DesktopApp {
             if !open {
                 self.show_register_form = false;
                 self.reset_form();
+                self.reset_progress();
             }
         }
 
@@ -1188,7 +1363,6 @@ impl eframe::App for DesktopApp {
                             .max_height(28.0)
                             .max_width(220.0),
                     );
-
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let btn = egui::Button::new(
                             egui::RichText::new(t.register_btn).color(white_cold),
@@ -1228,21 +1402,17 @@ impl eframe::App for DesktopApp {
                     ui.vertical_centered(|ui| {
                         ui.add(
                             egui::Image::new(&self.isotipo_tex)
-                                .max_width(64.0)
-                                .max_height(64.0),
+                                .max_width(64.0).max_height(64.0),
                         );
                         ui.add_space(12.0);
                         ui.add(egui::Label::new(
                             egui::RichText::new(t.welcome_title)
-                                .size(28.0)
-                                .color(white_cold)
-                                .strong(),
+                                .size(28.0).color(white_cold).strong(),
                         ));
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(t.welcome_subtitle)
-                                .size(14.0)
-                                .color(gray_muted),
+                                .size(14.0).color(gray_muted),
                         );
                     });
                     ui.add_space(16.0);
@@ -1265,34 +1435,26 @@ impl eframe::App for DesktopApp {
                 };
                 table_frame.show(ui, |ui| {
                     ui.add_space(8.0);
-
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         let avail = ui.available_width();
                         let gap = 12.0;
-                        let col_count = 6;
+                        let col_count = 7;
                         let spacing_total = gap * (col_count as f32 - 1.0);
                         let usable = avail - spacing_total;
                         let cw = [
-                            usable * 0.18,
+                            usable * 0.16, usable * 0.13, usable * 0.17,
+                            usable * 0.12, usable * 0.12, usable * 0.15,
                             usable * 0.15,
-                            usable * 0.20,
-                            usable * 0.14,
-                            usable * 0.14,
-                            usable * 0.19,
                         ];
 
                         if self.servers.is_empty() {
                             ui.add_space(48.0);
                             ui.vertical_centered(|ui| {
-                                ui.label(
-                                    egui::RichText::new(t.no_servers)
-                                        .color(gray_soft),
-                                );
+                                ui.label(egui::RichText::new(t.no_servers).color(gray_soft));
                                 ui.add_space(4.0);
                                 ui.label(
                                     egui::RichText::new(t.no_servers_hint)
-                                        .size(12.0)
-                                        .color(gray_muted),
+                                        .size(12.0).color(gray_muted),
                                 );
                             });
                         } else {
@@ -1301,66 +1463,50 @@ impl eframe::App for DesktopApp {
                                 .min_col_width(0.0)
                                 .show(ui, |ui| {
                                     let hdr = gray_muted;
-                                    ui.add_sized(
-                                        [cw[0], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_name).color(hdr).strong()),
-                                    );
-                                    ui.add_sized(
-                                        [cw[1], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_ip).color(hdr).strong()),
-                                    );
-                                    ui.add_sized(
-                                        [cw[2], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_agent_version).color(hdr).strong()),
-                                    );
-                                    ui.add_sized(
-                                        [cw[3], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_ram).color(hdr).strong()),
-                                    );
-                                    ui.add_sized(
-                                        [cw[4], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_cpu).color(hdr).strong()),
-                                    );
-                                    ui.add_sized(
-                                        [cw[5], 20.0],
-                                        egui::Label::new(egui::RichText::new(t.col_status).color(hdr).strong()),
-                                    );
+                                    ui.add_sized([cw[0], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_name).color(hdr).strong()));
+                                    ui.add_sized([cw[1], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_ip).color(hdr).strong()));
+                                    ui.add_sized([cw[2], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_agent_version).color(hdr).strong()));
+                                    ui.add_sized([cw[3], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_ram).color(hdr).strong()));
+                                    ui.add_sized([cw[4], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_cpu).color(hdr).strong()));
+                                    ui.add_sized([cw[5], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_status).color(hdr).strong()));
+                                    ui.add_sized([cw[6], 20.0], egui::Label::new(
+                                        egui::RichText::new(t.col_actions).color(hdr).strong()));
                                     ui.end_row();
 
-                                    // ── Render servers ──
-                                    for server in &self.servers {
-                                        ui.add_sized(
-                                            [cw[0], 20.0],
-                                            egui::Label::new(&server.name),
-                                        );
-                                        ui.add_sized(
-                                            [cw[1], 20.0],
-                                            egui::Label::new(&server.ip),
-                                        );
-                                        ui.add_sized(
-                                            [cw[2], 20.0],
-                                            egui::Label::new(if server.hostname.is_empty() { t.unknown } else { &server.hostname }),
-                                        );
+                                    for (i, server) in self.servers.iter().enumerate() {
+                                        ui.add_sized([cw[0], 20.0], egui::Label::new(&server.name));
+                                        ui.add_sized([cw[1], 20.0], egui::Label::new(&server.ip));
+                                        ui.add_sized([cw[2], 20.0], egui::Label::new(
+                                            if server.hostname.is_empty() { t.unknown } else { &server.hostname }));
                                         let ram_str = if server.ram_total_mb > 0 {
                                             format!("{} MB", server.ram_total_mb)
-                                        } else {
+                                        } else { t.unknown.into() };
+                                        ui.add_sized([cw[3], 20.0], egui::Label::new(ram_str));
+                                        let cpu_str = if server.cpu_model.is_empty() {
                                             t.unknown.into()
-                                        };
-                                        ui.add_sized(
-                                            [cw[3], 20.0],
-                                            egui::Label::new(ram_str),
+                                        } else if server.cpu_count > 0 {
+                                            format!("{} ({}cpu)", server.cpu_model, server.cpu_count)
+                                        } else { server.cpu_model.clone() };
+                                        ui.add_sized([cw[4], 20.0], egui::Label::new(cpu_str));
+                                        ui.add_sized([cw[5], 20.0], egui::Label::new(
+                                            egui::RichText::new(t.online)
+                                                .color(egui::Color32::from_rgb(70, 200, 120))));
+                                        let resp = ui.add_sized([cw[6], 20.0],
+                                            egui::Button::new(
+                                                egui::RichText::new("\u{2699}").size(14.0).color(gray_soft),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::NONE),
                                         );
-                                        ui.add_sized(
-                                            [cw[4], 20.0],
-                                            egui::Label::new(if server.cpu_model.is_empty() { t.unknown } else { &server.cpu_model }),
-                                        );
-                                        ui.add_sized(
-                                            [cw[5], 20.0],
-                                            egui::Label::new(
-                                                egui::RichText::new(t.online)
-                                                    .color(egui::Color32::from_rgb(70, 200, 120)),
-                                            ),
-                                        );
+                                        if resp.clicked() {
+                                            self.install_popup_idx = Some(i);
+                                        }
                                         ui.end_row();
                                     }
                                 });
@@ -1371,6 +1517,83 @@ impl eframe::App for DesktopApp {
                 });
             });
 
+        // ── Install agent popup ──
+        if let Some(idx) = self.install_popup_idx {
+            if idx < self.servers.len() {
+                let server = self.servers[idx].clone();
+                let mut open = true;
+                egui::Window::new(t.actions_title)
+                    .id(format!("install_popup_{idx}").into())
+                    .open(&mut open)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .fixed_size([400.0, 220.0])
+                    .collapsible(false)
+                    .resizable(false)
+                    .show(ctx, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.add_space(12.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(t.actions_server_prefix)
+                                    .size(14.0).color(gray_soft),
+                            );
+                            ui.label(
+                                egui::RichText::new(&server.name)
+                                    .size(14.0).color(white_cold).strong(),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("<ip:{}>", server.ip))
+                                    .size(12.0).color(gray_muted),
+                            );
+                        });
+                        ui.add_space(8.0);
+                        if self.config.central_host.is_empty() {
+                            ui.label(
+                                egui::RichText::new(t.install_popup_warning)
+                                    .size(12.0)
+                                    .color(egui::Color32::from_rgb(230, 190, 50)),
+                            );
+                        }
+                        ui.add_space(12.0);
+                        let install_btn = egui::Button::new(
+                            egui::RichText::new(t.install_agent_btn).color(white_cold),
+                        )
+                        .fill(accent_mid)
+                        .corner_radius(4.0);
+                        if ui.add_sized([ui.available_width(), 0.0], install_btn).clicked()
+                            && !self.config.central_host.is_empty()
+                        {
+                            self.start_install(idx);
+                        }
+                        ui.add_space(8.0);
+                        let delete_btn = egui::Button::new(
+                            egui::RichText::new(t.delete_server_btn).color(white_cold),
+                        )
+                        .fill(error_color)
+                        .corner_radius(4.0);
+                        if ui.add_sized([ui.available_width(), 0.0], delete_btn).clicked() {
+                            self.servers.remove(idx);
+                            save_servers(&ServersConfig { servers: self.servers.clone() });
+                            self.install_popup_idx = None;
+                        }
+                        ui.add_space(12.0);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button(
+                                egui::RichText::new(t.install_cancel).color(gray_soft),
+                            ).clicked() {
+                                self.install_popup_idx = None;
+                            }
+                        });
+                        ui.add_space(8.0);
+                    });
+                if !open {
+                    self.install_popup_idx = None;
+                }
+            } else {
+                self.install_popup_idx = None;
+            }
+        }
+
         // ── Footer ──
         egui::TopBottomPanel::bottom("footer")
             .frame(egui::Frame {
@@ -1380,7 +1603,6 @@ impl eframe::App for DesktopApp {
             })
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    // Left: central host info
                     let host_info = format!(
                         "{}  ·  {}:{}",
                         t.footer,
@@ -1388,38 +1610,26 @@ impl eframe::App for DesktopApp {
                         self.config.central_port,
                     );
                     ui.label(
-                        egui::RichText::new(host_info)
-                            .size(11.0)
-                            .color(gray_muted),
+                        egui::RichText::new(host_info).size(11.0).color(gray_muted),
                     );
-
-                    // Right: setup button + language toggle
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let lang_label = self.lang.label();
                         if ui.button(
                             egui::RichText::new(lang_label)
                                 .size(11.0)
                                 .color(egui::Color32::from_rgb(54, 200, 255)),
-                        )
-                        .clicked()
-                        {
+                        ).clicked() {
                             self.lang = self.lang.toggle();
                         }
                         ui.label(
-                            egui::RichText::new("Language:")
-                                .size(11.0)
-                                .color(gray_muted),
+                            egui::RichText::new("Language:").size(11.0).color(gray_muted),
                         );
-
                         ui.add_space(8.0);
-
                         if ui.button(
                             egui::RichText::new(t.setup_title)
                                 .size(11.0)
                                 .color(egui::Color32::from_rgb(54, 200, 255)),
-                        )
-                        .clicked()
-                        {
+                        ).clicked() {
                             self.show_setup = true;
                         }
                     });
