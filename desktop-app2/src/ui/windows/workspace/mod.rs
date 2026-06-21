@@ -1,3 +1,3 @@
-pub mod workspace_state;
+pub mod states;
 pub mod workspace_window;
 pub mod views;

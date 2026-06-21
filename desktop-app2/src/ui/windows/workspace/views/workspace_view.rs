@@ -1,7 +1,7 @@
-use eframe::egui::{self};
+use eframe::{egui::{self}};
 use egui::panel::Panel;
 
-use crate::ui::windows::workspace::workspace_window::WorkspaceWindow;
+use crate::ui::windows::workspace::{views::modal_setup_view, workspace_window::WorkspaceWindow};
 
 pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
@@ -42,7 +42,9 @@ pub fn render(
         .show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(format!("{}:{}", window.state.central_host, window.state.central_port) )
+                    egui::RichText::new(
+                        format!("{}:{}", window.setup_state.central_host, window.setup_state.central_port) 
+                    )
                         .size(11.0)
                         .color(window.style.color_gray_muted),
                 );
@@ -65,7 +67,7 @@ pub fn render(
                             .size(11.0)
                             .color(window.style.color_cyan_highlight),
                     ).clicked() {
-                        window.state.show_setup = true;
+                        window.setup_state.show_setup = true;
                     }
                 });
             });
@@ -129,7 +131,7 @@ pub fn render(
                     egui::Grid::new("servers_grid")
                         .striped(true)
                         .min_col_width(0.0)
-                        .show(ui, |ui| {
+                        .show(ui, |_ui| {
                             // headers...
                             // rows...
                         });
@@ -139,19 +141,8 @@ pub fn render(
             });
         });
 
-    if window.state.show_setup {
-        let mut open = true;
-        egui::Window::new("Network Setup")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .fixed_size([560.0, 840.0])
-            .show(ui.ctx(), |ui| {
-                // campos: IP, puerto, validaciones, botón guardar
-            });
-        if !open {
-            window.state.show_setup = false;
-        }
+    if window.setup_state.show_setup {
+        modal_setup_view::render(ui, window);
     }
 
 }

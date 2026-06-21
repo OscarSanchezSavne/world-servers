@@ -2677,6 +2677,8 @@ version = "0.1.0"
 dependencies = [
  "eframe 0.34.3",
  "egui_extras 0.34.3",
+ "serde",
+ "toml",
 ]
 
 [[package]]

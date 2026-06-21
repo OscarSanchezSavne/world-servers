@@ -1,17 +1,18 @@
 use eframe::egui::{self, TextureHandle};
 
+use crate::core::system;
 use crate::ui::style_global;
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
+use crate::ui::windows::workspace::states::setup_state;
 use crate::ui::windows::workspace::views::workspace_view;
-use crate::ui::windows::workspace::workspace_state::WorkspaceState;
 
 
 pub struct WorkspaceWindow{
     pub logotipo: TextureHandle,
     pub isotipo: TextureHandle,
-    pub state: WorkspaceState,
-    pub style: StyleGlobal
+    pub style: StyleGlobal,
+    pub setup_state: setup_state::SetupState,
 }
 
 impl WorkspaceWindow {
@@ -32,11 +33,12 @@ impl WorkspaceWindow {
         let logotipo =load_texture(ctx, style_global::LOGOTIPO_BYTES);
         let isotipo =load_texture(ctx, style_global::ISOTIPO_BYTES);
         let style= StyleGlobal::new();
-        let mut state= WorkspaceState::new();
+        let setup= system::setup::load_config();
+        let setup_state= setup_state::SetupState::new(setup);
         Self{
             logotipo,
             isotipo,
-            state,
+            setup_state,
             style
         }
     }

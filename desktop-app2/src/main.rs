@@ -1,4 +1,5 @@
 mod ui;
+mod core;
 use eframe::egui;
 
 use crate::ui::windows::workspace::workspace_window::WorkspaceWindow;
