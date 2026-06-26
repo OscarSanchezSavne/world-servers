@@ -1,5 +1,13 @@
 use eframe::egui;
 
+#[derive(PartialEq, Clone, Debug)]
+pub enum ProcessState {
+    Idle, Running, Done, ProcessError(String), ValidateError(String),
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum ExecutionState {Message(String), Done, Error(String),}
+
 pub fn load_favicon() -> egui::IconData {
     let bytes = include_bytes!("../../assets/images/isotipo.png");
     let color_image = egui_extras::image::load_image_bytes(bytes)

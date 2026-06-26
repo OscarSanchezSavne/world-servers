@@ -2678,6 +2678,7 @@ dependencies = [
  "eframe 0.34.3",
  "egui_extras 0.34.3",
  "serde",
+ "ssh2",
  "toml",
 ]
 

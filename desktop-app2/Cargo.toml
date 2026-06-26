@@ -8,3 +8,4 @@ eframe = "0.34.3"
 egui_extras = { version = "0.34", features = ["image"] }
 serde = { version = "1", features = ["derive"] }
 toml = { version = "0.8", features = ["parse"] }
+ssh2 = "0.9"

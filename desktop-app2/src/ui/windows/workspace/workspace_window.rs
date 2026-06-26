@@ -1,9 +1,11 @@
 use eframe::egui::{self, TextureHandle};
-
-use crate::core::system;
+use crate::core::server::manager::{self, Server};
+use crate::core::{server, system};
+use crate::core::system::setup::{Setup, load_config};
 use crate::ui::style_global;
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
+use crate::ui::windows::workspace::states::server_form::ServerForm;
 use crate::ui::windows::workspace::states::setup_state;
 use crate::ui::windows::workspace::views::workspace_view;
 
@@ -13,6 +15,9 @@ pub struct WorkspaceWindow{
     pub isotipo: TextureHandle,
     pub style: StyleGlobal,
     pub setup_state: setup_state::SetupState,
+    pub setup: system::setup::Setup,
+    pub server_form: ServerForm,
+    pub servers: Vec<Server>
 }
 
 impl WorkspaceWindow {
@@ -30,17 +35,67 @@ impl WorkspaceWindow {
     }
 
     fn new(ctx: &egui::Context) -> Self {
-        let logotipo =load_texture(ctx, style_global::LOGOTIPO_BYTES);
-        let isotipo =load_texture(ctx, style_global::ISOTIPO_BYTES);
-        let style= StyleGlobal::new();
         let setup= system::setup::load_config();
-        let setup_state= setup_state::SetupState::new(setup);
+        let setup_state= setup_state::SetupState::new(&setup);
         Self{
-            logotipo,
-            isotipo,
+            logotipo: load_texture(ctx, style_global::LOGOTIPO_BYTES),
+            isotipo: load_texture(ctx, style_global::ISOTIPO_BYTES),
             setup_state,
-            style
+            style: StyleGlobal::new(),
+            setup,
+            server_form: ServerForm::new(),
+            servers: server::manager::Server::get_servers()
         }
+    }
+
+    pub fn save_setup(&mut self) {
+        system::setup::save_config(& Setup{
+            central_host: self.setup_state.central_host.clone(),
+            central_port: self.setup_state.central_port,
+            configured: true
+        });
+        self.setup_state.show_setup= false;
+        self.setup= load_config();
+    }
+
+    pub fn cancel_setup(&mut self) {
+        self.setup_state.show_setup= false;
+        self.setup= load_config();
+        self.setup_state= setup_state::SetupState::new(&self.setup);
+
+    }
+
+    pub fn open_server_form(&mut self) {
+        self.server_form.show= true;
+        self.server_form.create= true;
+    }
+
+    pub fn cancel_server_form(&mut self) {
+        self.server_form= ServerForm::new();
+        self.servers= manager::Server::get_servers();
+    }
+
+    pub fn save_server_form(&mut self){
+
+        let new_server= self.server_form.to_server();
+        
+        let validated = match new_server.validate() {
+            Ok(v) => v,
+            Err(e) => {
+                self.server_form.process_state = ProcessState::ValidateError(e);
+                return;
+            }
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
+        self.server_form.process_state= ProcessState::Running;
+        self.server_form.execution_receiver= Some(rx);
+        self.server_form.process_log= Vec::new();
+
+        validated
+            .set_execution_channel(tx)
+            .save();
+
     }
 
 }
@@ -48,6 +103,7 @@ impl WorkspaceWindow {
 
 impl eframe::App for WorkspaceWindow {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.server_form.validate_state_execution_save_server(); 
         workspace_view::render(ui, self)
     }
 }

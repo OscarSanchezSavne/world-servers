@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagrama de Comunicación — Guardar Servidor (Hilos)</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --accent: #58a6ff;
+            --accent-bg: #1c2838;
+            --green: #3fb950;
+            --green-bg: #14261a;
+            --red: #f85149;
+            --red-bg: #2d1515;
+            --orange: #d2991d;
+            --orange-bg: #2d2510;
+            --purple: #bc8cff;
+            --purple-bg: #201a30;
+            --cyan: #39d2c0;
+            --pink: #f778ba;
+            --gray: #8b949e;
+            --gray-bg: #1a1c20;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+            padding: 28px 20px 50px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        h1 { font-size: 1.5rem; font-weight: 700; color: #e6edf3; text-align: center; margin-bottom: 4px; }
+        .subtitle { color: var(--gray); font-size: 0.88rem; text-align: center; margin-bottom: 28px; line-height: 1.5; }
+        .subtitle code { background: #21262d; padding: 2px 7px; border-radius: 4px; font-size: 0.8rem; color: var(--cyan); }
+
+        /* ===== DIAGRAM CONTAINER ===== */
+        .diagram {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 30px 24px 24px;
+            max-width: 1100px;
+            width: 100%;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; gap: 0;
+        }
+
+        /* ===== SECTION ROWS ===== */
+        .section-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            margin-bottom: 14px;
+            display: inline-flex; align-items: center; gap: 8px;
+            align-self: flex-start;
+        }
+        .section-ui  { background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); border-opacity: 0.3; }
+        .section-thread { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); border-opacity: 0.3; }
+        .section-bug { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); border-opacity: 0.3; }
+
+        /* ===== COMPONENT HEADERS ===== */
+        .comp-row {
+            display: flex; gap: 20px; margin-bottom: 10px; flex-wrap: wrap;
+        }
+        .comp-box {
+            flex: 1 1 200px; min-width: 180px;
+            background: #1c2533; border: 1.5px solid var(--accent);
+            border-radius: 10px; padding: 12px 14px; text-align: center;
+        }
+        .comp-box.state-box { border-color: var(--purple); background: #1a1830; }
+        .comp-box.thread-box { border-color: var(--green); background: #0f1d14; }
+        .comp-name { font-size: 0.82rem; font-weight: 700; margin-bottom: 3px; }
+        .comp-path { font-size: 0.7rem; color: var(--gray); }
+        .comp-box .comp-name { color: var(--accent); }
+        .comp-box.state-box .comp-name { color: var(--purple); }
+        .comp-box.thread-box .comp-name { color: var(--green); }
+
+        /* ===== ARROW ===== */
+        .arrow-down {
+            display: flex; flex-direction: column; align-items: center;
+            color: var(--gray); font-size: 0.75rem; padding: 2px 0;
+            margin-bottom: 2px;
+        }
+        .arrow-down .line { width: 2px; height: 14px; border-radius: 1px; }
+        .arrow-down .head { font-size: 0.6rem; line-height: 1; margin-top: -2px; }
+
+        .arrow-right {
+            display: flex; align-items: center; gap: 4px;
+            color: var(--gray); font-size: 0.75rem; padding: 4px 0;
+        }
+        .arrow-right .line { height: 2px; width: 18px; border-radius: 1px; flex-shrink: 0; }
+        .arrow-right .head { font-size: 0.6rem; }
+
+        /* ===== FLOW STEP ===== */
+        .flow-grid {
+            display: grid;
+            grid-template-columns: 1fr 60px 1fr 40px 1fr;
+            gap: 8px 6px;
+            margin: 14px 0;
+            align-items: start;
+        }
+        .flow-col {
+            display: flex; flex-direction: column; gap: 10px;
+        }
+        .flow-arrow-col {
+            display: flex; flex-direction: column; align-items: center;
+            padding-top: 6px; gap: 0;
+        }
+        .step {
+            border-radius: 8px; padding: 10px 12px; font-size: 0.8rem; line-height: 1.45;
+            border: 1px solid; position: relative;
+        }
+        .step-num {
+            position: absolute; top: -9px; left: 10px;
+            font-size: 0.65rem; font-weight: 800; padding: 1px 7px; border-radius: 8px;
+            letter-spacing: 0.3px;
+        }
+        .step-ui {
+            background: var(--accent-bg); border-color: var(--accent);
+        }
+        .step-ui .step-num { background: var(--accent); color: #000; }
+        .step-purple {
+            background: var(--purple-bg); border-color: var(--purple);
+        }
+        .step-purple .step-num { background: var(--purple); color: #000; }
+        .step-green {
+            background: var(--green-bg); border-color: var(--green);
+        }
+        .step-green .step-num { background: var(--green); color: #000; }
+        .step-red {
+            background: var(--red-bg); border-color: var(--red);
+        }
+        .step-red .step-num { background: var(--red); color: #fff; }
+        .step-orange {
+            background: var(--orange-bg); border-color: var(--orange);
+        }
+        .step-orange .step-num { background: var(--orange); color: #000; }
+        .step-pink {
+            background: #2d1a2d; border-color: var(--pink);
+        }
+        .step-pink .step-num { background: var(--pink); color: #000; }
+        .step-gray {
+            background: var(--gray-bg); border-color: var(--gray);
+        }
+        .step-gray .step-num { background: var(--gray); color: #000; }
+
+        .connector-v {
+            width: 2px; flex: 1; min-height: 22px; border-radius: 1px; margin: 0 auto;
+        }
+        .connector-h {
+            height: 2px; flex: 1; min-width: 22px; border-radius: 1px; margin: auto 0;
+        }
+        .connector-v.blue { background: var(--accent); }
+        .connector-v.green { background: var(--green); }
+        .connector-v.red { background: var(--red); }
+        .connector-v.purple { background: var(--purple); }
+        .connector-v.orange { background: var(--orange); }
+        .connector-v.gray { background: var(--gray); }
+        .connector-h.blue { background: var(--accent); }
+        .connector-h.green { background: var(--green); }
+        .connector-h.purple { background: var(--purple); }
+        .connector-h.red { background: var(--red); }
+        .connector-h.orange { background: var(--orange); }
+        .connector-h.gray { background: var(--gray); }
+
+        .col-center {
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .row-center {
+            display: flex; align-items: center; gap: 4px;
+        }
+
+        /* ===== BRANCH ===== */
+        .branch-row {
+            display: flex; gap: 12px; margin: 8px 0; align-items: flex-start;
+        }
+        .branch-left, .branch-right {
+            flex: 1; display: flex; flex-direction: column; gap: 8px;
+        }
+
+        /* ===== STATE MACHINE TABLE ===== */
+        .state-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 10px;
+            margin: 14px 0;
+        }
+        .state-card {
+            border-radius: 8px; padding: 10px 12px; border: 1px solid;
+            font-size: 0.78rem; line-height: 1.4;
+        }
+        .state-card strong { display: block; font-size: 0.82rem; margin-bottom: 3px; }
+
+        /* ===== BUG CARDS ===== */
+        .bug-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px; margin: 14px 0;
+        }
+        .bug-card {
+            background: #1a0f0f; border: 1px solid #3d1e1e;
+            border-radius: 10px; padding: 14px 16px;
+            border-left: 3px solid var(--red);
+        }
+        .bug-card h4 { font-size: 0.85rem; color: var(--red); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .bug-card p { font-size: 0.78rem; color: var(--text); line-height: 1.5; }
+        .bug-card .fix { font-size: 0.76rem; color: var(--orange); margin-top: 6px; }
+        .bug-card code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 0.72rem; color: var(--cyan); }
+
+        /* ===== LEGEND BADGE ===== */
+        .badge {
+            display: inline-block; padding: 1px 8px; border-radius: 10px;
+            font-size: 0.68rem; font-weight: 700; margin-right: 4px; text-transform: uppercase;
+        }
+        .badge-ui { background: var(--accent-bg); color: var(--accent); }
+        .badge-thread { background: var(--green-bg); color: var(--green); }
+        .badge-state { background: var(--purple-bg); color: var(--purple); }
+        .badge-chan { background: var(--orange-bg); color: var(--orange); }
+        .badge-bug { background: var(--red-bg); color: var(--red); }
+
+        hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+        .thread-block {
+            background: #0d1a11; border: 1px solid #1f4a2b; border-radius: 10px;
+            padding: 14px 18px; margin: 10px 0;
+        }
+        .thread-block h4 { color: var(--green); font-size: 0.85rem; margin-bottom: 8px; }
+        .thread-block .log-line { font-size: 0.76rem; color: var(--gray); padding: 2px 0; font-family: 'SF Mono','Fira Code','Consolas',monospace; }
+    </style>
+</head>
+<body>
+
+    <h1>&#x1F504; Comunicación de estado con hilos al Guardar un Servidor</h1>
+    <p class="subtitle">
+        <code>modal_register_server_view</code>
+        &#x2194; <code>workspace_window</code>
+        &#x2194; <code>server::manager</code>
+        &nbsp;&nbsp;|&nbsp;&nbsp; Rust + eframe/egui + <code>std::sync::mpsc</code>
+    </p>
+
+    <div class="diagram">
+
+        <!-- ========== COMPONENTES ========== -->
+        <div class="comp-row">
+            <div class="comp-box">
+                <div class="comp-name">&#x1F4CB; modal_register_server_view</div>
+                <div class="comp-path">views/modal_register_server_view.rs</div>
+            </div>
+            <div class="comp-box">
+                <div class="comp-name">&#x1F4E6; workspace_window</div>
+                <div class="comp-path">workspace_window.rs</div>
+            </div>
+            <div class="comp-box state-box">
+                <div class="comp-name">&#x1F9E0; ServerForm</div>
+                <div class="comp-path">states/server_form.rs</div>
+            </div>
+            <div class="comp-box thread-box">
+                <div class="comp-name">&#x1F5A5; server::manager</div>
+                <div class="comp-path">core/server/manager.rs</div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- ========== SECCIÓN: HILO PRINCIPAL ========== -->
+        <span class="section-title section-ui">&#x1F578; HILO PRINCIPAL — UI Thread (eframe/egui)</span>
+
+        <!-- PASO 1: Usuario pulsa Save -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 10px 0;">
+            <div style="flex:0 0 auto; width: 220px;">
+                <div class="step step-pink" style="margin-bottom:0;">
+                    <span class="step-num">1</span>
+                    &#x1F5B1; Usuario hace clic en <b>«Save»</b><br>
+                    <small style="color:var(--gray);">modal_register_server_view</small>
+                </div>
+            </div>
+            <div class="col-center" style="flex:0 0 50px;">
+                <div class="connector-h blue" style="width:40px;"></div>
+                <span style="font-size:0.6rem; color:var(--accent);">&#x25B6;</span>
+            </div>
+            <div style="flex:1;">
+                <div class="step step-ui">
+                    <span class="step-num">2</span>
+                    Llama a <code>window.save_server_form()</code><br>
+                    <small style="color:var(--gray);">workspace_window.rs : línea 63</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 3: to_server() -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1; display:flex; gap:10px; align-items:flex-start;">
+                <div class="step step-ui" style="flex:1;">
+                    <span class="step-num">3</span>
+                    Convierte formulario a <code>Server</code><br>
+                    <small style="color:var(--gray);"><code>self.server_form.to_server()</code></small>
+                </div>
+                <div class="col-center" style="flex:0 0 40px;">
+                    <div class="connector-h purple" style="width:30px;"></div>
+                    <span style="font-size:0.6rem; color:var(--purple);">&#x25B6;</span>
+                </div>
+                <div style="flex: 0 0 200px;">
+                    <div class="step step-purple">
+                        <span class="step-num">E</span>
+                        ServerForm<br>
+                        <small style="color:var(--gray);">campos &#x2192; Server</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 4: validate() con bifurcación -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1;">
+                <div class="step step-ui" style="margin-bottom:12px;">
+                    <span class="step-num">4</span>
+                    <code>server.validate()</code> &#x2192; comprueba nombre, IP, SSH user, clave...
+                </div>
+
+                <!-- Bifurcación -->
+                <div style="display:flex; gap:16px;">
+                    <!-- Rama ERROR -->
+                    <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                        <div style="text-align:center; font-size:0.75rem; color:var(--red);">&#x274C; Err</div>
+                        <div class="connector-h red" style="width:100%; height:2px;"></div>
+                        <div class="step step-red">
+                            <span class="step-num">4a</span>
+                            <b>ProcessState::ValidateError(msg)</b><br>
+                            <small style="color:var(--gray);">Se queda en UI thread.<br>El modal muestra el error en rojo.</small>
+                        </div>
+                    </div>
+
+                    <!-- Rama OK -->
+                    <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                        <div style="text-align:center; font-size:0.75rem; color:var(--green);">&#x2705; Ok</div>
+                        <div class="connector-h green" style="width:100%; height:2px;"></div>
+                        <div class="step step-green">
+                            <span class="step-num">4b</span>
+                            Crea <code>mpsc::channel&lt;ExecutionState&gt;()</code><br>
+                            <small style="color:var(--gray);"><code>let (tx, rx) = ...</code></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 5: Guardar rx, estado Running -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1;">
+                <div class="step step-ui">
+                    <span class="step-num">5</span>
+                    <code>self.server_form.execution_receiver = Some(rx)</code><br>
+                    <code>self.server_form.process_state = ProcessState::Running</code><br>
+                    <code>self.server_form.process_log = Vec::new()</code>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- ========== SECCIÓN: HILO TRABAJADOR ========== -->
+        <span class="section-title section-thread">&#x1F9F5; CAMBIO DE HILO — thread::spawn</span>
+
+        <!-- PASO 6: set_execution_channel + save() -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1;">
+                <div class="step step-green" style="border-style:dashed;">
+                    <span class="step-num">6</span>
+                    <code>validated.set_execution_channel(tx).save()</code><br>
+                    <small style="color:var(--gray);">El <b>tx</b> se mueve (move) dentro del hilo</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 7: thread::spawn -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1;">
+                <div class="step step-green" style="border-width:2px;">
+                    <span class="step-num">7</span>
+                    <code>thread::spawn(move || { ... })</code><br>
+                    <small style="color:var(--gray);">Nuevo hilo del SO. Envuelto en <code>catch_unwind</code>.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Worker thread detail -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;">
+                <div class="connector-v green" style="height:20px;"></div>
+                <span style="font-size:0.6rem; color:var(--green);">&#x25BC;</span>
+                    <div class="connector-v green" style="height:20px;"></div>
+            </div>
+            <div style="flex:1;">
+                <div class="thread-block">
+                    <h4>&#x2699; test_ssh_connection(self)  — dentro del hilo</h4>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> tx.send(Message("Start connection"))</div>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> TcpStream::connect_timeout(ip:22, 10s)</div>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> tx.send(Message("Connected to server"))</div>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> Session::new() &#x2192; handshake()</div>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> userauth_pubkey_file(user, key, passphrase)</div>
+                    <div class="log-line"><span class="badge badge-chan">tx</span> channel.exec("echo date") &#x2192; read output</div>
+                    <div class="log-line" style="color:var(--green);"><span class="badge badge-chan">tx</span> tx.send(Done)  &#x2705;</div>
+                    <div class="log-line" style="color:var(--red); margin-top:4px;">Si panic &#x2192; catch_unwind captura &#x2192; tx.send(Error(msg))</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 8: Mensajes de vuelta por canal -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;">
+                <div class="connector-v orange" style="height:20px;"></div>
+                <span style="font-size:0.6rem; color:var(--orange);">&#x25B2;</span>
+            </div>
+            <div style="flex:1;">
+                <div class="step step-orange">
+                    <span class="step-num">8</span>
+                    <b>mpsc::channel</b> transporta <code>ExecutionState::Message / Done / Error</code><br>
+                    <small style="color:var(--gray);">Comunicación thread-safe. El hilo escribe, UI lee.</small>
+                </div>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- ========== SECCIÓN: POLLING UI ========== -->
+        <span class="section-title section-ui">&#x1F504; POLLING — UI Thread (cada frame)</span>
+
+        <!-- PASO 9: Poll -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;"></div>
+            <div style="flex:1;">
+                <div class="step step-purple">
+                    <span class="step-num">9</span>
+                    <code>validate_state_execution_save_server()</code><br>
+                    <small style="color:var(--gray);">Llamado desde <code>eframe::App::ui()</code> en cada frame.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 10: try_recv loop -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;"></div>
+            <div class="col-center" style="flex:0 0 50px;">
+                <div class="connector-v purple" style="height:20px;"></div>
+                <span style="font-size:0.6rem; color:var(--purple);">&#x25BC;</span>
+            </div>
+            <div style="flex:1;">
+                <div class="step step-purple" style="border-width:2px;">
+                    <span class="step-num">10</span>
+                    <b>while let Ok(msg) = rx.try_recv() { ... }</b>
+                    <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+                        <div style="padding:4px 8px; border-radius:4px; background:#1a1a2e; font-size:0.76rem;">
+                            <span style="color:var(--accent);">Message(text)</span> &#x2192; <code>process_log.push(text)</code>
+                        </div>
+                        <div style="padding:4px 8px; border-radius:4px; background:#14261a; font-size:0.76rem;">
+                            <span style="color:var(--green);">Done</span> &#x2192; <code>process_state = Done</code> &#x2192; <code>execution_receiver = None</code>
+                        </div>
+                        <div style="padding:4px 8px; border-radius:4px; background:#2d1515; font-size:0.76rem;">
+                            <span style="color:var(--red);">Error(e)</span> &#x2192; <code>process_state = ProcessError(e)</code> &#x2192; <code>execution_receiver = None</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PASO 11: Re-render -->
+        <div style="display:flex; align-items:flex-start; gap:12px; margin: 8px 0;">
+            <div style="flex:0 0 auto; width: 220px;">
+                <div class="step step-pink" style="margin-bottom:0;">
+                    <span class="step-num">11</span>
+                    <b>modal_register_server_view</b><br>
+                    <small style="color:var(--gray);">Se repinta según process_state</small>
+                </div>
+            </div>
+            <div class="col-center" style="flex:0 0 50px;">
+                <div class="connector-h blue" style="width:40px;"></div>
+                <span style="font-size:0.6rem; color:var(--accent);">&#x25C0;</span>
+            </div>
+            <div style="flex:1;">
+                <!-- nada, solo la flecha inversa -->
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- ========== MÁQUINA DE ESTADOS ========== -->
+        <span class="section-title" style="background:var(--purple-bg); color:var(--purple); border:1px solid var(--purple);">&#x1F3AE; Renderizado del modal según ProcessState</span>
+
+        <div class="state-grid">
+            <div class="state-card" style="background:#14261a; border-color:var(--green);">
+                <strong style="color:var(--green);">&#x1F7E2; Idle</strong>
+                Formulario completo (500px)<br>
+                <small style="color:var(--gray);">Inputs: nombre, IP, user, clave, passphrase<br>Botones: Cancel / Save</small>
+            </div>
+            <div class="state-card" style="background:#2d1515; border-color:var(--red);">
+                <strong style="color:var(--red);">&#x274C; ValidateError(msg)</strong>
+                Mismo formulario + panel de error rojo<br>
+                <small style="color:var(--gray);">Validación local falló (IP inválida, clave no existe...)</small>
+            </div>
+            <div class="state-card" style="background:#1a1a2e; border-color:var(--accent);">
+                <strong style="color:var(--accent);">&#x2699; Running</strong>
+                Spinner animado + panel de log en vivo<br>
+                <small style="color:var(--gray);"><code>ctx.request_repaint()</code> para refrescar</small>
+            </div>
+            <div class="state-card" style="background:#14261a; border-color:var(--green);">
+                <strong style="color:var(--green);">&#x2705; Done</strong>
+                Log completo + botón «Accept»<br>
+                <small style="color:var(--gray);">Accept &#x2192; cancel_server_form() (resetea)</small>
+            </div>
+            <div class="state-card" style="background:#2d1515; border-color:var(--red);">
+                <strong style="color:var(--red);">&#x1F6AB; ProcessError(msg)</strong>
+                Log + panel de error + botones Cancel / Back<br>
+                <small style="color:var(--gray);">Back &#x2192; vuelve a Idle (corregir datos)<br>Cancel &#x2192; resetea formulario</small>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- ========== INCONGRUENCIAS ========== -->
+        <span class="section-title section-bug">&#x26A0; INCONGRUENCIAS DETECTADAS</span>
+
+        <div class="bug-list">
+            <div class="bug-card">
+                <h4>&#x2757; #1 — Height no contempla ValidateError</h4>
+                <p>
+                    <code>modal_register_server_view.rs</code> líneas 19-24:<br>
+                    <code>if state == Idle { height=500 } else { height=100 }</code>
+                </p>
+                <p>
+                    <b>ValidateError</b> renderiza el mismo formulario pero recibe <code>height=100</code>
+                    &#x2192; <code>fixed_size(560, 0)</code> rompe el layout.
+                </p>
+                <p class="fix">
+                    &#x1F4A1; <b>Fix:</b> <code>if matches!(state, Idle | ValidateError(_)) { height=500 } else { height=350 }</code>
+                </p>
+            </div>
+
+            <div class="bug-card">
+                <h4>&#x2757; #2 — Comentario «REVISAR ESTA VISTA CON EL ASISTENTE»</h4>
+                <p>
+                    Línea 3 de <code>modal_register_server_view.rs</code>.
+                    Parece un TODO del desarrollador que quedó sin resolver.
+                </p>
+                <p class="fix">
+                    &#x1F4A1; <b>Fix:</b> Eliminar la línea o convertir en un comentario <code>// TODO:</code> concreto.
+                </p>
+            </div>
+
+            <div class="bug-card">
+                <h4>&#x2757; #3 — Cierre inconsistente del modal</h4>
+                <p>
+                    Botón <b>«X»</b> solo pone <code>show=false</code>.<br>
+                    <code>cancel_server_form()</code> resetea todo con <code>ServerForm::new()</code>.
+                </p>
+                <p>
+                    Si el usuario cierra con X y reabre, el estado anterior (log, errores) persiste.
+                </p>
+                <p class="fix">
+                    &#x1F4A1; <b>Fix:</b> Al detectar <code>!open</code> llamar también a <code>cancel_server_form()</code>.
+                </p>
+            </div>
+
+            <div class="bug-card">
+                <h4>&#x2757; #4 — Altura fija no se adapta al log</h4>
+                <p>
+                    Estados Running/Done/Error usan altura fija de 100px, pero el panel de log
+                    crece con cada mensaje SSH. No hay scroll ni altura dinámica.
+                </p>
+                <p class="fix">
+                    &#x1F4A1; <b>Fix:</b> Usar <code>egui::ScrollArea</code> en el panel de log y quitar <code>fixed_size</code>.
+                </p>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

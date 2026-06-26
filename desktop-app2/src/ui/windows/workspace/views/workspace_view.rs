@@ -1,7 +1,7 @@
 use eframe::{egui::{self}};
 use egui::panel::Panel;
 
-use crate::ui::windows::workspace::{views::modal_setup_view, workspace_window::WorkspaceWindow};
+use crate::ui::windows::workspace::{views::{modal_register_server_view, modal_setup_view, table_servers}, workspace_window::WorkspaceWindow};
 
 pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
@@ -19,14 +19,10 @@ pub fn render(
                     egui::Image::from_texture(&window.logotipo).max_height(28.0).max_width(220.0)
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let btn = egui::Button::new(
-                        egui::RichText::new("Register server").color(window.style.color_white_cold),
-                    )
-                    .fill(window.style.color_accent_mid)
-                    .stroke(egui::Stroke::NONE)
-                    .corner_radius(4.0);
-                    if ui.add(btn).clicked() {
-                        // action
+                    if window.style.button(
+                        ui, "Register Server", 3.5
+                    ).clicked() {
+                        window.open_server_form();
                     }
                 });
             });
@@ -43,7 +39,7 @@ pub fn render(
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(
-                        format!("{}:{}", window.setup_state.central_host, window.setup_state.central_port) 
+                        format!("{}:{}", window.setup.central_host, window.setup.central_port) 
                     )
                         .size(11.0)
                         .color(window.style.color_gray_muted),
@@ -125,24 +121,41 @@ pub fn render(
 
             // ── Card 2: Server table ──
             card_frame.show(ui, |ui| {
-                ui.add_space(8.0);
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    // table headers + rows
-                    egui::Grid::new("servers_grid")
-                        .striped(true)
-                        .min_col_width(0.0)
-                        .show(ui, |_ui| {
-                            // headers...
-                            // rows...
-                        });
-                    ui.add_space(16.0);
-                });
+
+                if window.servers.is_empty() {
+                    ui.add_space(8.0);
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(60.0);
+                        ui.label(
+                            egui::RichText::new("📡  No servers registered yet")
+                                .size(18.0)
+                                .color(window.style.color_gray_muted)
+                                .strong(),
+                        );
+                        ui.add_space(8.0);
+
+                        window.style.info_panel(ui, 
+                            "ℹ️  Getting started",
+                            "To begin, you must register at least one server. Click 'Register server' in the top bar to add your first server."
+                        );
+
+                        ui.add_space(60.0);
+                    });
+                } else {
+                    table_servers::render(ui, window);
+                }
+
                 ui.add_space(8.0);
             });
+
         });
 
     if window.setup_state.show_setup {
         modal_setup_view::render(ui, window);
+    }
+
+    if window.server_form.show {
+        modal_register_server_view::render(ui, window);
     }
 
 }

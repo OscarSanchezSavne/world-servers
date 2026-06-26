@@ -7,7 +7,7 @@ pub struct SetupState {
 }
 
 impl SetupState {
-    pub fn new(setup: system::setup::Setup) -> Self {
+    pub fn new(setup: &system::setup::Setup) -> Self {
         Self {
             central_host: setup.central_host.clone(),
             central_port: setup.central_port.clone(),
