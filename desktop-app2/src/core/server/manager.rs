@@ -3,7 +3,7 @@ use std::{io::Read, net::TcpStream, sync::mpsc::Sender, thread, time::Duration};
 use serde::{Deserialize, Serialize};
 use ssh2::Session;
 
-use crate::{core::system::{self, crypto, setup}, ui::utilities::ExecutionState};
+use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState}};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,14 +109,95 @@ impl Server {
             if !expanded.exists() {
                 return Err(format!("SSH key file not found at: {}", self.private_key_path));
             }
-            if self.passphrase.trim().is_empty() {
-                return Err("Passphrase is required when enabled".into());
+            if self.use_passphrase {
+                if self.passphrase.trim().is_empty() {
+                    return Err("Passphrase is required when enabled".into());
+                }
             }
         }
         Ok(ValidatedServer{
             server: self,
             execution_channel: None
         })
+    }
+
+
+    fn test_ssh_connection(&self, tx: Sender<ExecutionState>){
+
+        tx.send(ExecutionState::Message("Start connection".to_string())).unwrap();
+        let tcp = TcpStream::connect_timeout(
+            &format!("{}:{}", self.server_ip, self.server_port).parse().unwrap(),
+            Duration::from_secs(10)
+        ).expect("Connection timed out. Server did not  respond");
+
+        tx.send(ExecutionState::Message("Connected to server".to_string())).unwrap();
+
+        let mut session = Session::new().expect("Failed to create SSH session");
+        tx.send(ExecutionState::Message("SSH session created".to_string())).unwrap();
+
+        session.set_tcp_stream(tcp);
+        session.handshake().expect("SSH handshake failed. Check the server address");
+        tx.send(ExecutionState::Message("SSH handshake completed".to_string())).unwrap();
+
+        if self.use_password {
+            session.userauth_password(
+                &self.ssh_user,
+                &self.password,
+            ).expect("Password authentication failed. Check your credentials");
+            tx.send(ExecutionState::Message("Password authentication successful".to_string())).unwrap();
+        }else{
+            let passphrase = if self.use_passphrase{
+                Some(self.passphrase.as_str())
+            }else { None };
+
+            session.userauth_pubkey_file(
+                &self.ssh_user, None, 
+                &expand_path(&self.private_key_path), passphrase,
+            ).expect("SSH authentication failed. Check your credentials");
+            tx.send(ExecutionState::Message("SSH authentication successful".to_string())).unwrap();
+        }
+
+        if !session.authenticated() {
+            panic!("Authentication rejected by server");
+        }
+
+        let mut channel = session.channel_session().unwrap();
+        let command= "date"; 
+        channel.exec(&command).unwrap();
+        tx.send(ExecutionState::Message(format!("Executing command: {}", command))).unwrap();
+
+        let mut output = String::new();
+        channel.read_to_string(&mut output).unwrap();
+        tx.send(ExecutionState::Message(format!("Command output: {}", output))).unwrap();
+        
+        channel.wait_close().unwrap();
+        tx.send(ExecutionState::Message(format!("Connection to server successful: {}", output))).unwrap();
+
+    }
+
+
+    pub fn async_test_ssh_connection(self, sender: Sender<ExecutionState>){
+        let prefix = setup::get_config_prefix();
+        thread::spawn(move || {
+            setup::set_config_prefix(prefix);
+
+            let sender_result= sender.clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.test_ssh_connection(sender);
+            }));
+
+            let outcome = match result {
+                Ok(_) => {
+                    ExecutionState::Done
+                },
+                Err(e) => {
+                    ExecutionState::Error(utilities::parse_error(e))
+                }
+            };
+            if let Err(e) = sender_result.send(outcome) {
+                eprintln!("[Warning] Failed to send execution result: {}", e);
+            }
+        });
     }
 
 }
@@ -140,7 +221,7 @@ impl ValidatedServer {
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.test_ssh_connection(tx.clone());
+                self.server.test_ssh_connection(tx.clone());
                 self.write_to_file(tx.clone());
             }));
 
@@ -149,76 +230,13 @@ impl ValidatedServer {
                     ExecutionState::Done
                 },
                 Err(e) => {
-                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                        let full = s.to_string();
-                        full.split(':').next().unwrap_or(&full).trim().to_string()
-                    } else if let Some(s) = e.downcast_ref::<String>() {
-                        let full = s.clone();
-                        full.split(':').next().unwrap_or(&full).trim().to_string()
-                    } else {
-                        "Unknown error".to_string()
-                    };
-                    ExecutionState::Error(msg)
+                    ExecutionState::Error(utilities::parse_error(e))
                 }
             };
             if let Err(e) = tx.send(outcome) {
                 eprintln!("[Warning] Failed to send execution result: {}", e);
             }
         });
-    }
-
-
-    fn test_ssh_connection(&self, tx: Sender<ExecutionState>){
-
-        tx.send(ExecutionState::Message("Start connection".to_string())).unwrap();
-        let tcp = TcpStream::connect_timeout(
-            &format!("{}:{}", self.server.server_ip, self.server.server_port).parse().unwrap(),
-            Duration::from_secs(10)
-        ).expect("Connection timed out. Server did not  respond");
-
-        tx.send(ExecutionState::Message("Connected to server".to_string())).unwrap();
-
-        let mut session = Session::new().expect("Failed to create SSH session");
-        tx.send(ExecutionState::Message("SSH session created".to_string())).unwrap();
-
-        session.set_tcp_stream(tcp);
-        session.handshake().expect("SSH handshake failed. Check the server address");
-        tx.send(ExecutionState::Message("SSH handshake completed".to_string())).unwrap();
-
-        if self.server.use_password {
-            session.userauth_password(
-                &self.server.ssh_user,
-                &self.server.password,
-            ).expect("Password authentication failed. Check your credentials");
-            tx.send(ExecutionState::Message("Password authentication successful".to_string())).unwrap();
-        }else{
-            let passphrase = if self.server.use_passphrase{
-                Some(self.server.passphrase.as_str())
-            }else { None };
-
-            session.userauth_pubkey_file(
-                &self.server.ssh_user, None, 
-                &expand_path(&self.server.private_key_path), passphrase,
-            ).expect("SSH authentication failed. Check your credentials");
-            tx.send(ExecutionState::Message("SSH authentication successful".to_string())).unwrap();
-        }
-
-        if !session.authenticated() {
-            panic!("Authentication rejected by server");
-        }
-
-        let mut channel = session.channel_session().unwrap();
-        let command= "date"; 
-        channel.exec(&command).unwrap();
-        tx.send(ExecutionState::Message(format!("Executing command: {}", command))).unwrap();
-
-        let mut output = String::new();
-        channel.read_to_string(&mut output).unwrap();
-        tx.send(ExecutionState::Message(format!("Command output: {}", output))).unwrap();
-        
-        channel.wait_close().unwrap();
-        tx.send(ExecutionState::Message(format!("Connection to server successful: {}", output))).unwrap();
-
     }
 
 

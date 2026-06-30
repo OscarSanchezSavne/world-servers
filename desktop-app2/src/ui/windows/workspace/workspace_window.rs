@@ -1,11 +1,15 @@
+use std::sync::mpsc::Receiver;
+use std::thread;
+
 use eframe::egui::{self, TextureHandle};
 use crate::core::server::manager::{self, Server};
 use crate::core::{server, system};
-use crate::core::system::setup::{Setup, load_config};
+use crate::core::system::setup::{self, Setup, load_config};
 use crate::ui::style_global;
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
 use crate::ui::windows::workspace::states::server_form::ServerForm;
+use crate::ui::windows::workspace::states::server_test_connection::ServerTestConnection;
 use crate::ui::windows::workspace::states::setup_state;
 use crate::ui::windows::workspace::views::workspace_view;
 
@@ -17,7 +21,8 @@ pub struct WorkspaceWindow{
     pub setup_state: setup_state::SetupState,
     pub setup: system::setup::Setup,
     pub server_form: ServerForm,
-    pub servers: Vec<Server>
+    pub servers: Vec<Server>,
+    pub server_test_connection: ServerTestConnection
 }
 
 impl WorkspaceWindow {
@@ -44,7 +49,8 @@ impl WorkspaceWindow {
             style: StyleGlobal::new(),
             setup,
             server_form: ServerForm::new(),
-            servers: server::manager::Server::get_servers()
+            servers: server::manager::Server::get_servers(),
+            server_test_connection: ServerTestConnection::new()
         }
     }
 
@@ -70,6 +76,18 @@ impl WorkspaceWindow {
         self.server_form.create= true;
     }
 
+    pub fn test_server(&mut self, server: Server) {
+        let (sender, receiver) = std::sync::mpsc::channel::<ExecutionState>();
+        self.server_test_connection.show= true;
+        self.server_test_connection.execution_receiver= Some(receiver);
+        self.server_test_connection.process_state= ProcessState::Running;
+        server.async_test_ssh_connection(sender);
+    }
+
+    pub fn test_server_accept(&mut self) {
+        self.server_test_connection= ServerTestConnection::new();
+    }
+
     pub fn cancel_server_form(&mut self) {
         self.server_form= ServerForm::new();
         self.servers= manager::Server::get_servers();
@@ -87,13 +105,13 @@ impl WorkspaceWindow {
             }
         };
 
-        let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
+        let (sender, receiver) = std::sync::mpsc::channel::<ExecutionState>();
         self.server_form.process_state= ProcessState::Running;
-        self.server_form.execution_receiver= Some(rx);
+        self.server_form.execution_receiver= Some(receiver);
         self.server_form.process_log= Vec::new();
 
         validated
-            .set_execution_channel(tx)
+            .set_execution_channel(sender)
             .save();
 
     }
@@ -103,7 +121,8 @@ impl WorkspaceWindow {
 
 impl eframe::App for WorkspaceWindow {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.server_form.validate_state_execution_save_server(); 
+        self.server_form.validate_state_execution(); 
+        self.server_test_connection.validate_state_execution(); 
         workspace_view::render(ui, self)
     }
 }

@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use eframe::egui;
 
 #[derive(PartialEq, Clone, Debug)]
@@ -23,4 +25,17 @@ pub fn load_texture(ctx: &egui::Context, bytes: &[u8]) -> egui::TextureHandle {
     let color_image = egui_extras::image::load_image_bytes(bytes)
         .expect("Failed to decode image");
     ctx.load_texture("name", color_image, egui::TextureOptions::LINEAR)
+}
+
+pub fn parse_error(e: Box<dyn Any + Send>) -> String {
+    let msg = if let Some(s) = e.downcast_ref::<&str>() {
+        let full = s.to_string();
+        full.split(':').next().unwrap_or(&full).trim().to_string()
+    } else if let Some(s) = e.downcast_ref::<String>() {
+        let full = s.clone();
+        full.split(':').next().unwrap_or(&full).trim().to_string()
+    } else {
+        "Unknown error".to_string()
+    };
+    msg
 }

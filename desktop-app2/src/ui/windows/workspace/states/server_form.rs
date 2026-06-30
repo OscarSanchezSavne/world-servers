@@ -56,7 +56,7 @@ impl ServerForm {
         }
     }
 
-    pub fn validate_state_execution_save_server(&mut self)
+    pub fn validate_state_execution(&mut self)
     {
         if self.process_state == ProcessState::Running {
             if let Some(ref rx) = self.execution_receiver {
