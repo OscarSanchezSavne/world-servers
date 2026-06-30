@@ -1,5 +1,7 @@
 use std::sync::{mpsc::Receiver};
 
+use uuid::Uuid;
+
 use crate::{core::server::manager, ui::utilities::{ExecutionState, ProcessState}};
 
 pub struct ServerForm{
@@ -44,6 +46,7 @@ impl ServerForm {
     pub fn to_server(&self)-> manager::Server
     {
         manager::Server{
+            uuid: None,
             server_name: self.server_name.clone(),
             server_ip: self.server_ip.clone(),
             server_port: self.server_port.parse::<u16>().unwrap(),

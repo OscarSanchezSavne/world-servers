@@ -2,12 +2,14 @@ use std::{io::Read, net::TcpStream, sync::mpsc::Sender, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use ssh2::Session;
+use uuid::Uuid;
 
 use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState}};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server{
+    pub uuid: Option<Uuid>,
     pub server_name: String,
     pub server_ip: String,
     pub server_port: u16,
@@ -29,6 +31,7 @@ pub struct ValidatedServer{
 impl Default for Server {
     fn default() -> Self {
         Self {
+            uuid: None,
             server_name: "".to_string(),
             server_ip: "".to_string(),
             server_port: 0,
@@ -217,7 +220,7 @@ impl ValidatedServer {
 
         self.execution_channel= None;
         let prefix = setup::get_config_prefix();
-
+        self.server.uuid= Some(Uuid::new_v4());
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

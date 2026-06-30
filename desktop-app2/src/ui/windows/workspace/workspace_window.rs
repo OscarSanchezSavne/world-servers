@@ -1,10 +1,7 @@
-use std::sync::mpsc::Receiver;
-use std::thread;
-
 use eframe::egui::{self, TextureHandle};
 use crate::core::server::manager::{self, Server};
 use crate::core::{server, system};
-use crate::core::system::setup::{self, Setup, load_config};
+use crate::core::system::setup::{Setup, load_config};
 use crate::ui::style_global;
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
