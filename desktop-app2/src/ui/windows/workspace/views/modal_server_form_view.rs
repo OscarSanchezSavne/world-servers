@@ -5,7 +5,7 @@ pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
 ){
     let mut open = true;
-    egui::Area::new(egui::Id::new("modal_register_server"))
+    egui::Area::new(egui::Id::new("modal_server_form_view"))
         .fixed_pos(egui::Pos2::ZERO)
         .show(ui.ctx(), |ui| {
             let bg = ui.ctx().viewport_rect();

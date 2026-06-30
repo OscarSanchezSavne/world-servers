@@ -1,7 +1,7 @@
 use eframe::{egui::{self}};
 use egui::panel::Panel;
 
-use crate::ui::windows::workspace::{views::{modal_register_server_view, modal_setup_view, table_servers}, workspace_window::WorkspaceWindow};
+use crate::ui::windows::workspace::{views::{modal_server_form_view, modal_setup_view, table_servers}, workspace_window::WorkspaceWindow};
 
 pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
@@ -155,7 +155,7 @@ pub fn render(
     }
 
     if window.server_form.show {
-        modal_register_server_view::render(ui, window);
+        modal_server_form_view::render(ui, window);
     }
 
 }

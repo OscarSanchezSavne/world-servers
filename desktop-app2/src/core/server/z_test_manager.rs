@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::{fs::{self}, path::PathBuf, str::FromStr};
-    use crate::{core::{server::manager::{Server, expand_path}, system::{setup::{self, config_path, init_config}}}, ui::utilities::ExecutionState};
+    use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::ExecutionState};
 
     #[test]
     fn test_expand_tilde_relative() {
@@ -87,7 +87,7 @@ mod tests {
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
             password: "root".into(),
-            server_port: 22,
+            server_port: 2222,
             use_password: true,
             private_key_path: "".into(),
             use_passphrase: false,
@@ -126,8 +126,10 @@ mod tests {
         let path= config_path(
             "servers.toml".to_string()
         );
+        println!("{:?}", &path);
         let servers= Server::get_servers();
-        assert_eq!(path.exists(), true);
+        assert_eq!(PathBuf::from(".config_test_get_servers_file_not_exists").exists(), true);
+        assert_eq!(!path.exists(), true);
         assert_eq!(servers.is_empty(), true);
         setup::clean_config();
     }
@@ -149,7 +151,7 @@ server_port = 22
 use_password = false
 password = ""
 "#;
-
+        let toml= crypto::obfuscate(toml);
         std::fs::write(
             setup::config_path("servers.toml".to_string()), toml
         ).expect("Failed to create servers.toml");

@@ -55,8 +55,7 @@ pub fn config_path(file: String)-> PathBuf
 
 #[cfg(test)]
 pub fn clean_config() {
-    let prefix= self::get_config_prefix();
-    let path = format!(".config{}", prefix);
+    let path = self::config_path("".into());
     if PathBuf::from(&path).exists() {
         std::fs::remove_dir_all(&path).expect("Failed to remove config directory");
     }

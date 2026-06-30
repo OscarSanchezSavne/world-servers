@@ -239,7 +239,7 @@
 
     <h1>&#x1F504; Comunicación de estado con hilos al Guardar un Servidor</h1>
     <p class="subtitle">
-        <code>modal_register_server_view</code>
+        <code>modal_server_form_view</code>
         &#x2194; <code>workspace_window</code>
         &#x2194; <code>server::manager</code>
         &nbsp;&nbsp;|&nbsp;&nbsp; Rust + eframe/egui + <code>std::sync::mpsc</code>
@@ -250,8 +250,8 @@
         <!-- ========== COMPONENTES ========== -->
         <div class="comp-row">
             <div class="comp-box">
-                <div class="comp-name">&#x1F4CB; modal_register_server_view</div>
-                <div class="comp-path">views/modal_register_server_view.rs</div>
+                <div class="comp-name">&#x1F4CB; modal_server_form_view</div>
+                <div class="comp-path">views/modal_server_form_view.rs</div>
             </div>
             <div class="comp-box">
                 <div class="comp-name">&#x1F4E6; workspace_window</div>
@@ -278,7 +278,7 @@
                 <div class="step step-pink" style="margin-bottom:0;">
                     <span class="step-num">1</span>
                     &#x1F5B1; Usuario hace clic en <b>«Save»</b><br>
-                    <small style="color:var(--gray);">modal_register_server_view</small>
+                    <small style="color:var(--gray);">modal_server_form_view</small>
                 </div>
             </div>
             <div class="col-center" style="flex:0 0 50px;">
@@ -488,7 +488,7 @@
             <div style="flex:0 0 auto; width: 220px;">
                 <div class="step step-pink" style="margin-bottom:0;">
                     <span class="step-num">11</span>
-                    <b>modal_register_server_view</b><br>
+                    <b>modal_server_form_view</b><br>
                     <small style="color:var(--gray);">Se repinta según process_state</small>
                 </div>
             </div>
@@ -543,7 +543,7 @@
             <div class="bug-card">
                 <h4>&#x2757; #1 — Height no contempla ValidateError</h4>
                 <p>
-                    <code>modal_register_server_view.rs</code> líneas 19-24:<br>
+                    <code>modal_server_form_view.rs</code> líneas 19-24:<br>
                     <code>if state == Idle { height=500 } else { height=100 }</code>
                 </p>
                 <p>
@@ -558,7 +558,7 @@
             <div class="bug-card">
                 <h4>&#x2757; #2 — Comentario «REVISAR ESTA VISTA CON EL ASISTENTE»</h4>
                 <p>
-                    Línea 3 de <code>modal_register_server_view.rs</code>.
+                    Línea 3 de <code>modal_server_form_view.rs</code>.
                     Parece un TODO del desarrollador que quedó sin resolver.
                 </p>
                 <p class="fix">
