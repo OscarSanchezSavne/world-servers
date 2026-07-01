@@ -190,7 +190,6 @@ pub fn render(
                         if window.server_form.process_state == ProcessState::Done {
                             if window.style.button(ui, "Accept", 1.0).clicked(){
                                 window.cancel_server_form();
-
                             }
                         }
 

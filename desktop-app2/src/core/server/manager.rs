@@ -203,6 +203,25 @@ impl Server {
         });
     }
 
+    pub fn delete(&self) 
+    {
+        let mut servers = Server::get_servers();
+        servers.retain(|s| s.uuid != self.uuid);
+
+        let content = format!(
+            "# WorldServers - Registered servers\n{}",
+            toml::to_string(&ServersList { servers }).expect("Failed to serialize servers")
+        );
+
+        let encrypted = crypto::obfuscate(&content);
+        
+        std::fs::write(
+            setup::config_path("servers.toml".to_string()), 
+            encrypted
+        )
+        .expect("Failed to write servers.toml");
+    }
+
 }
 
 impl ValidatedServer {

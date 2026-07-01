@@ -1,7 +1,5 @@
 use std::sync::{mpsc::Receiver};
 
-use uuid::Uuid;
-
 use crate::{core::server::manager, ui::utilities::{ExecutionState, ProcessState}};
 
 pub struct ServerForm{

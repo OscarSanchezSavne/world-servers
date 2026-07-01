@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use eframe::egui::{self, TextureHandle};
 use crate::core::server::manager::{self, Server};
 use crate::core::{server, system};
@@ -5,6 +7,7 @@ use crate::core::system::setup::{Setup, load_config};
 use crate::ui::style_global;
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
+use crate::ui::windows::utilities::states::confirm_state::ConfirmState;
 use crate::ui::windows::workspace::states::server_form::ServerForm;
 use crate::ui::windows::workspace::states::server_test_connection::ServerTestConnection;
 use crate::ui::windows::workspace::states::setup_state;
@@ -19,8 +22,12 @@ pub struct WorkspaceWindow{
     pub setup: system::setup::Setup,
     pub server_form: ServerForm,
     pub servers: Vec<Server>,
-    pub server_test_connection: ServerTestConnection
+    pub server_test_connection: ServerTestConnection,
+    pub confirm: ConfirmState,
+    action: Arc<Mutex<Vec<Action>>>,
 }
+
+enum Action {GetServers}
 
 impl WorkspaceWindow {
     
@@ -47,7 +54,9 @@ impl WorkspaceWindow {
             setup,
             server_form: ServerForm::new(),
             servers: server::manager::Server::get_servers(),
-            server_test_connection: ServerTestConnection::new()
+            server_test_connection: ServerTestConnection::new(),
+            confirm: ConfirmState::new(),
+            action: Arc::new(Mutex::new(Vec::new()))
         }
     }
 
@@ -79,6 +88,20 @@ impl WorkspaceWindow {
         self.server_test_connection.execution_receiver= Some(receiver);
         self.server_test_connection.process_state= ProcessState::Running;
         server.async_test_ssh_connection(sender);
+    }
+
+    pub fn delete_server(&mut self, server: &Server) 
+    {
+        let server_clone= server.clone();
+        let post_action= self.action.clone();
+        self.confirm.open(
+            format!("Are you sure you want to delete server {}?", server.server_name.trim())
+            ,move ||{
+                server_clone.delete();
+                post_action.lock().unwrap().push(Action::GetServers);
+            }, 
+            ||{}
+        );
     }
 
     pub fn test_server_accept(&mut self) {
@@ -113,6 +136,19 @@ impl WorkspaceWindow {
 
     }
 
+    fn process_actions(&mut self)
+    {
+        if let Ok(mut actions) = self.action.try_lock() {
+            while let Some(item) = actions.pop() {
+                match item {
+                    Action::GetServers => {
+                        self.servers = manager::Server::get_servers();
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 
@@ -120,6 +156,9 @@ impl eframe::App for WorkspaceWindow {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.server_form.validate_state_execution(); 
         self.server_test_connection.validate_state_execution(); 
+        self.process_actions();
+        
         workspace_view::render(ui, self)
+            
     }
 }

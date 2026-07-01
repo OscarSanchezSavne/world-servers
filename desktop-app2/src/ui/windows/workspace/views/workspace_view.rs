@@ -1,7 +1,7 @@
 use eframe::{egui::{self}};
 use egui::panel::Panel;
 
-use crate::ui::windows::workspace::{views::{modal_server_form_view, modal_setup_view, modal_test_server_connection, table_servers}, workspace_window::WorkspaceWindow};
+use crate::ui::windows::{utilities::views::confirm_view, workspace::{views::{modal_server_form_view, modal_setup_view, modal_test_server_connection, table_servers}, workspace_window::WorkspaceWindow}};
 
 pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
@@ -161,6 +161,11 @@ pub fn render(
 
     if window.server_test_connection.show {
         modal_test_server_connection::render(ui, window);
+    }
+
+
+    if window.confirm.show {
+        confirm_view::render(ui, window);
     }
 
 }
