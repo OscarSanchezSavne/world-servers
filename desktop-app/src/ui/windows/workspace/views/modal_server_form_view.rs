@@ -18,8 +18,13 @@ pub fn render(
     if window.server_form.process_state == ProcessState::Idle {
         height = 500.0;
     }
+    let title= if window.server_form.create {
+        "New Server"
+    } else{
+        "Edit Server"
+    };
 
-    egui::Window::new("New Server")
+    egui::Window::new(title)
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -129,8 +134,17 @@ pub fn render(
                     if window.style.button(ui, "Cancel", 2.0).clicked(){
                         window.cancel_server_form();
                     }
-                    if window.style.button(ui, "Save", 1.0).clicked(){
-                        window.save_server_form();
+
+                    if window.server_form.create{
+                        if window.style.button(ui, 
+                            "Save", 1.0).clicked(){
+                            window.save_server_form();
+                        }
+                    }else{
+                        if window.style.button(ui, 
+                            "Update", 1.0).clicked(){
+                            window.update_server_form();
+                        }
                     }
                 });
 

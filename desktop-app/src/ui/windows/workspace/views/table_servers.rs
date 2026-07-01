@@ -70,7 +70,9 @@ pub fn render(
                                 .width(100.0)
                                 .show_ui(ui, |ui| {
                                     ui.set_min_width(120.0);
-                                    if ui.button("Edit").clicked() { }
+                                    if ui.button("Edit").clicked() {
+                                        window.open_server_edit_form(server.clone());
+                                     }
                                     if ui.button("Test connection").clicked() {
                                         window.test_server(server.clone());
                                     }

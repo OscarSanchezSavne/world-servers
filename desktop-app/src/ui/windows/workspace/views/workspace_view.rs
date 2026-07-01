@@ -20,9 +20,17 @@ pub fn render(
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if window.style.button(
-                        ui, "Register Server", 3.5
+                        ui, "Register Server", 4.0
                     ).clicked() {
-                        window.open_server_form();
+                        window.open_server_new_form();
+                    }
+
+                    if window.servers.len() > 0 {
+                        if window.style.button_orange(
+                            ui, "Servers visualize", 3.0
+                        ).clicked() {
+                            window.launch_visualizer_and_exit(ui.ctx());
+                        }
                     }
                 });
             });

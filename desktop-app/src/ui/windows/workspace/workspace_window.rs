@@ -1,3 +1,4 @@
+use std::os::unix::process::CommandExt;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, TextureHandle};
@@ -77,9 +78,16 @@ impl WorkspaceWindow {
 
     }
 
-    pub fn open_server_form(&mut self) {
+    pub fn open_server_new_form(&mut self) {
+        self.server_form= ServerForm::new();
         self.server_form.show= true;
         self.server_form.create= true;
+    }
+
+    pub fn open_server_edit_form(&mut self, server: Server) {
+        self.server_form= ServerForm::from_server(server);
+        self.server_form.show= true;
+        self.server_form.create= false;
     }
 
     pub fn test_server(&mut self, server: Server) {
@@ -136,6 +144,29 @@ impl WorkspaceWindow {
 
     }
 
+    pub fn update_server_form(&mut self){
+
+        let new_server= self.server_form.to_server();
+        
+        let validated = match new_server.validate() {
+            Ok(v) => v,
+            Err(e) => {
+                self.server_form.process_state = ProcessState::ValidateError(e);
+                return;
+            }
+        };
+
+        let (sender, receiver) = std::sync::mpsc::channel::<ExecutionState>();
+        self.server_form.process_state= ProcessState::Running;
+        self.server_form.execution_receiver= Some(receiver);
+        self.server_form.process_log= Vec::new();
+
+        validated
+            .set_execution_channel(sender)
+            .update();
+
+    }
+
     fn process_actions(&mut self)
     {
         if let Ok(mut actions) = self.action.try_lock() {
@@ -147,6 +178,17 @@ impl WorkspaceWindow {
                 }
             }
         }
+    }
+
+    pub fn launch_visualizer_and_exit(&self, ctx: &egui::Context) {
+        let self_path = std::env::current_exe().unwrap();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+
+        let err = std::process::Command::new(self_path)
+        .arg("--visualizer")
+        .exec();
+    
+        panic!("exec failed: {}", err);
     }
 
 }

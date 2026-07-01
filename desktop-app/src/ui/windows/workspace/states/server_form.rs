@@ -1,10 +1,13 @@
 use std::sync::{mpsc::Receiver};
 
+use uuid::Uuid;
+
 use crate::{core::server::manager, ui::utilities::{ExecutionState, ProcessState}};
 
 pub struct ServerForm{
     pub show: bool,
     pub create: bool,
+    pub uuid: Option<Uuid>,
     pub server_name: String,
     pub server_ip: String,
     pub server_port: String,
@@ -23,6 +26,7 @@ pub struct ServerForm{
 impl ServerForm {
     pub fn new() -> Self {
         Self {
+            uuid: None,
             show: false,
             create: true,
             server_name: "".to_string(),
@@ -44,7 +48,7 @@ impl ServerForm {
     pub fn to_server(&self)-> manager::Server
     {
         manager::Server{
-            uuid: None,
+            uuid: self.uuid,
             server_name: self.server_name.clone(),
             server_ip: self.server_ip.clone(),
             server_port: self.server_port.parse::<u16>().unwrap(),
@@ -54,6 +58,27 @@ impl ServerForm {
             private_key_path: self.private_key_path.clone(),
             use_passphrase: self.use_passphrase,
             passphrase: self.passphrase.clone(),
+        }
+    }
+    
+    pub fn from_server(server: manager::Server)->  Self
+    {
+        Self { 
+            uuid: server.uuid, 
+            show: false, 
+            create: false, 
+            server_name: server.server_name,
+            server_ip: server.server_ip,
+            server_port: server.server_port.to_string(),
+            use_password: server.use_password,
+            password: server.password,
+            ssh_user: server.ssh_user,
+            private_key_path: server.private_key_path,
+            use_passphrase: server.use_passphrase,
+            passphrase: server.passphrase,
+            process_log: Vec::new(),
+            process_state: ProcessState::Idle,
+            execution_receiver: None,
         }
     }
 

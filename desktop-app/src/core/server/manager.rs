@@ -85,11 +85,24 @@ impl Server {
         }
         
         let servers = Self::get_servers();
-        if servers.iter().any(|s| s.server_name == self.server_name) {
-            return Err("A server with this name already exists".into());
-        }
-        if servers.iter().any(|s| s.server_ip == self.server_ip) {
-            return Err("A server with this IP address already exists".into());
+        if let Some(_) = self.uuid{
+            if servers.iter().any(
+                |s| s.server_name == self.server_name && s.uuid != self.uuid
+            ) {
+                return Err("A server with this name already exists".into());
+            }
+            if servers.iter().any(
+                |s| s.server_ip == self.server_ip && s.uuid != self.uuid
+            ) {
+                return Err("A server with this IP address already exists".into());
+            }
+        }else{
+            if servers.iter().any(|s| s.server_name == self.server_name) {
+                return Err("A server with this name already exists".into());
+            }
+            if servers.iter().any(|s| s.server_ip == self.server_ip) {
+                return Err("A server with this IP address already exists".into());
+            }
         }
 
         if self.server_port == 0 {
@@ -271,6 +284,58 @@ impl ValidatedServer {
         let content = format!(
             "# WorldServers - Registered servers\n{}",
             toml::to_string(&ServersList { servers }).expect("Failed to save server to file")
+        );
+
+        let encrypted = crypto::obfuscate(&content);
+        
+        std::fs::write(
+            setup::config_path("servers.toml".to_string()), 
+            encrypted
+        )
+        .expect("Failed to write servers.toml");
+        tx.send(ExecutionState::Message("Server saved successfully".to_string())).unwrap();
+    }
+
+    pub fn update(mut self) {
+        let tx = self.execution_channel
+            .expect("[SystemError] No execution channel set");
+
+        self.execution_channel= None;
+        let prefix = setup::get_config_prefix();
+        thread::spawn(move || {
+            setup::set_config_prefix(prefix);
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.server.test_ssh_connection(tx.clone());
+                self.add_to_file(tx.clone());
+            }));
+
+            let outcome = match result {
+                Ok(_) => {
+                    ExecutionState::Done
+                },
+                Err(e) => {
+                    ExecutionState::Error(utilities::parse_error(e))
+                }
+            };
+            if let Err(e) = tx.send(outcome) {
+                eprintln!("[Warning] Failed to send execution result: {}", e);
+            }
+        });
+    }
+
+
+    fn add_to_file(&self, tx: Sender<ExecutionState>) 
+    {
+        tx.send(ExecutionState::Message("Saving server to file...".to_string())).unwrap();
+        let mut servers = Server::get_servers();
+        if let Some(pos) = servers.iter().position(|s| s.uuid == self.server.uuid) {
+            servers[pos] = self.server.clone();
+            tx.send(ExecutionState::Message("Server updated successfully".to_string())).unwrap();
+        }
+        
+        let content = format!(
+            "# WorldServers - Registered servers\n{}",
+            toml::to_string(&ServersList { servers }).expect("Failed to serialize servers")
         );
 
         let encrypted = crypto::obfuscate(&content);

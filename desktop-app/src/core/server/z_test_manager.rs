@@ -252,4 +252,67 @@ password = ""
 
     }
 
+    #[test]
+    fn test_update()
+    {
+        setup::init_config(Some("test_update".to_string()));
+        let server = Server {
+            uuid: Some(Uuid::new_v4()),
+            server_name: "Test".into(),
+            server_ip: "127.0.0.1".into(),
+            ssh_user: "root".into(),
+            password: "root".into(),
+            server_port: 2222,
+            use_password: true,
+            private_key_path: "".into(),
+            use_passphrase: false,
+            passphrase: "".into(),
+        };
+        
+        let validated = server.validate().unwrap();
+        let validated_to_update= validated.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
+
+        validated
+            .set_execution_channel(tx)
+            .save();
+
+        for msg in rx {
+            match msg {
+                ExecutionState::Message(text) => println!("{}", text),
+                ExecutionState::Done => {
+                    println!("✅ Test completed successfully");
+                    break;
+                }
+                ExecutionState::Error(e) => {
+                    panic!("❌ Error: {}", e);
+                }
+            }
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
+        validated_to_update
+            .set_execution_channel(tx)
+            .update();
+
+        for msg in rx {
+            match msg {
+                ExecutionState::Message(text) => println!("{}", text),
+                ExecutionState::Done => {
+                    println!("✅ Test completed successfully");
+                    break;
+                }
+                ExecutionState::Error(e) => {
+                    panic!("❌ Error: {}", e);
+                }
+            }
+        }
+
+        let servers= Server::get_servers();
+        assert_eq!(1, servers.len());
+        setup::clean_config();
+
+    }
+
 }

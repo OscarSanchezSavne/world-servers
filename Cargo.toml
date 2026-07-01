@@ -3,6 +3,5 @@ resolver = "2"
 
 members = [
     "desktop-app",
-    "desktop-app2",
-    "agent-bin", "visualizer-3d", "desktop-app2",
+    "agent-bin"
 ]

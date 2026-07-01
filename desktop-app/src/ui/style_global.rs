@@ -76,6 +76,21 @@ impl StyleGlobal {
         )
     }
 
+    pub fn button_orange(&self, ui: &mut egui::Ui, label: &str, percentage_width: f32) -> Response {
+        let btn_height = 28.0;
+        let btn_width = (ui.available_width() - 8.0) / percentage_width;
+
+        ui.add_sized([btn_width, btn_height],
+            egui::Button::new(
+                egui::RichText::new(label).color(
+                    egui::Color32::from_rgb(255, 240, 220)
+                )
+            )
+                .fill(egui::Color32::from_rgb(230, 126, 34)) // naranja
+                .corner_radius(4.0)
+        )
+    }
+
     pub fn info_panel(&self, ui: &mut egui::Ui, title: &str, label: &str) {
         
         egui::Frame::NONE
