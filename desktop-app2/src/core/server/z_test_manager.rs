@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use std::{fs::{self}, path::PathBuf, str::FromStr};
-    use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::ExecutionState};
+    use uuid::Uuid;
+
+use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::ExecutionState};
 
     #[test]
     fn test_expand_tilde_relative() {
@@ -54,6 +56,7 @@ mod tests {
     fn test_validate_passphrase_required_when_use_passphrase_is_true() {
         setup::init_config(Some("test_validate_passphrase_required_when_use_passphrase_is_true".to_string()));
         let server = Server {
+            uuid: Some(Uuid::new_v4()),
             server_name: "Ok".to_string(),
             server_ip: "192.168.1.1".to_string(),
             ssh_user: "root".to_string(),
@@ -83,6 +86,7 @@ mod tests {
     {
         setup::init_config(Some("test_save_validated_server".to_string()));
         let server = Server {
+            uuid: Some(Uuid::new_v4()),
             server_name: "Test".into(),
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
@@ -162,6 +166,90 @@ password = ""
         assert_eq!(servers.first().unwrap().server_name, "Servidor Web");
 
         setup::clean_config();
+    }
+
+    #[test]
+    fn test_async_test_ssh_connection()
+    {
+        init_config(Some("test_async_test_ssh_connection".to_string()));
+        let server = Server {
+            uuid: Some(Uuid::new_v4()),
+            server_name: "Test".into(),
+            server_ip: "127.0.0.1".into(),
+            ssh_user: "root".into(),
+            password: "root".into(),
+            server_port: 2222,
+            use_password: true,
+            private_key_path: "".into(),
+            use_passphrase: false,
+            passphrase: "".into(),
+        };
+        let (sender, receiver) = std::sync::mpsc::channel::<ExecutionState>();
+        server.async_test_ssh_connection(sender);
+        for msg in receiver {
+            match msg {
+                ExecutionState::Message(text) => println!("{}", text),
+                ExecutionState::Done => {
+                    println!("✅ Test completed successfully");
+                    break;
+                }
+                ExecutionState::Error(e) => {
+                    panic!("❌ Error: {}", e);
+                }
+            }
+        }
+
+        setup::clean_config();
+
+    }
+
+    #[test]
+    fn test_delete()
+    {
+        setup::init_config(Some("test_delete".to_string()));
+        let server = Server {
+            uuid: Some(Uuid::new_v4()),
+            server_name: "Test".into(),
+            server_ip: "127.0.0.1".into(),
+            ssh_user: "root".into(),
+            password: "root".into(),
+            server_port: 2222,
+            use_password: true,
+            private_key_path: "".into(),
+            use_passphrase: false,
+            passphrase: "".into(),
+        };
+        
+        let validated = server.validate().unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
+
+        validated
+            .set_execution_channel(tx)
+            .save();
+
+        for msg in rx {
+            match msg {
+                ExecutionState::Message(text) => println!("{}", text),
+                ExecutionState::Done => {
+                    println!("✅ Test completed successfully");
+                    break;
+                }
+                ExecutionState::Error(e) => {
+                    panic!("❌ Error: {}", e);
+                }
+            }
+        }
+
+        let servers= Server::get_servers();
+        let server= servers.first().unwrap();
+
+        server.delete();
+
+        let servers= Server::get_servers();
+        assert!(servers.is_empty());
+        setup::clean_config();
+
     }
 
 }
