@@ -1,6 +1,8 @@
 use std::any::Any;
 
 use eframe::egui;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum ProcessState {
@@ -8,7 +10,22 @@ pub enum ProcessState {
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum ExecutionState {Message(String), Done, Error(String),}
+pub enum ExecutionState {
+    Message(Uuid, String), Done(Uuid), Error(Uuid, String),
+}
+
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum ServerTraffic {
+    Package(Uuid, TcpdumpPacket), Error(Uuid, String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TcpdumpPacket {
+    pub dst_ip: String,
+    pub size: u64,
+}
+
 
 pub fn load_favicon() -> egui::IconData {
     let bytes = include_bytes!("../../assets/images/isotipo.png");

@@ -5,7 +5,7 @@ use eframe::egui::{self, TextureHandle};
 use crate::core::server::manager::{self, Server};
 use crate::core::{server, system};
 use crate::core::system::setup::{Setup, load_config};
-use crate::ui::style_global;
+use crate::ui::{self, style_global};
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
 use crate::ui::windows::utilities::states::confirm_state::ConfirmState;
@@ -29,9 +29,27 @@ pub struct WorkspaceWindow{
 }
 
 enum Action {GetServers}
+    
+pub fn run(){
+    let icon = ui::utilities::load_favicon();
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1000.0, 650.0])
+            .with_icon(icon),
+        ..Default::default()
+    };
+
+    system::setup::init_config(None);
+
+    eframe::run_native(
+        "WorldServers",
+        options,
+        Box::new(WorkspaceWindow::create)
+    ).unwrap();
+}
+
 
 impl WorkspaceWindow {
-    
     pub fn create(cc: &eframe::CreationContext<'_>) -> Result<Box<dyn eframe::App>, Box<dyn std::error::Error + Send + Sync>> {
         Self::configure_style(&cc.egui_ctx);
         Ok(Box::new(Self::new(&cc.egui_ctx)))

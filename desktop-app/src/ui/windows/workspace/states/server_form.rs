@@ -88,12 +88,12 @@ impl ServerForm {
             if let Some(ref rx) = self.execution_receiver {
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
-                        ExecutionState::Message(text) => self.process_log.push(text),
-                        ExecutionState::Done => {
+                        ExecutionState::Message(_server_uuid, text) => self.process_log.push(text),
+                        ExecutionState::Done(_) => {
                             self.process_state= ProcessState::Done;
                             break;
                         }
-                        ExecutionState::Error(e) => {
+                        ExecutionState::Error(_server_uuid, e) => {
                             self.process_state= ProcessState::ProcessError(e);
                             break;
                         }

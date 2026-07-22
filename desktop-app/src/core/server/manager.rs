@@ -1,10 +1,10 @@
-use std::{io::Read, net::TcpStream, sync::mpsc::Sender, thread, time::Duration};
+use std::{io::Read, net::TcpStream, sync::mpsc::{Sender}, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use ssh2::Session;
 use uuid::Uuid;
 
-use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState}};
+use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState, ServerTraffic}};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,61 +139,36 @@ impl Server {
 
 
     fn test_ssh_connection(&self, tx: Sender<ExecutionState>){
+        let server_uuid= self.uuid.unwrap().clone();
+        tx.send(ExecutionState::Message(server_uuid, "Start connection".to_string())).unwrap();
 
-        tx.send(ExecutionState::Message("Start connection".to_string())).unwrap();
-        let tcp = TcpStream::connect_timeout(
-            &format!("{}:{}", self.server_ip, self.server_port).parse().unwrap(),
-            Duration::from_secs(10)
-        ).expect("Connection timed out. Server did not  respond");
-
-        tx.send(ExecutionState::Message("Connected to server".to_string())).unwrap();
-
-        let mut session = Session::new().expect("Failed to create SSH session");
-        tx.send(ExecutionState::Message("SSH session created".to_string())).unwrap();
-
-        session.set_tcp_stream(tcp);
-        session.handshake().expect("SSH handshake failed. Check the server address");
-        tx.send(ExecutionState::Message("SSH handshake completed".to_string())).unwrap();
-
-        if self.use_password {
-            session.userauth_password(
-                &self.ssh_user,
-                &self.password,
-            ).expect("Password authentication failed. Check your credentials");
-            tx.send(ExecutionState::Message("Password authentication successful".to_string())).unwrap();
-        }else{
-            let passphrase = if self.use_passphrase{
-                Some(self.passphrase.as_str())
-            }else { None };
-
-            session.userauth_pubkey_file(
-                &self.ssh_user, None, 
-                &expand_path(&self.private_key_path), passphrase,
-            ).expect("SSH authentication failed. Check your credentials");
-            tx.send(ExecutionState::Message("SSH authentication successful".to_string())).unwrap();
-        }
-
-        if !session.authenticated() {
-            panic!("Authentication rejected by server");
-        }
-
+        tx.send(ExecutionState::Message(server_uuid, "Connected to server".to_string())).unwrap();
+        let session= self.open_session(Some(&tx));
         let mut channel = session.channel_session().unwrap();
-        let command= "date"; 
+        let command = "command -v tcpdump"; 
         channel.exec(&command).unwrap();
-        tx.send(ExecutionState::Message(format!("Executing command: {}", command))).unwrap();
 
         let mut output = String::new();
         channel.read_to_string(&mut output).unwrap();
-        tx.send(ExecutionState::Message(format!("Command output: {}", output))).unwrap();
+        channel.wait_close().unwrap();
+
+        let exit_code = channel.exit_status().unwrap();
+
+        if exit_code == 0 && !output.trim().is_empty() {
+            tx.send(ExecutionState::Message(server_uuid, format!("Tcpdump installed at: {}", output.trim()))).unwrap();
+        } else {
+            panic!("Tcpdump is NOT installed (sudo apt install tcpdump)");
+        }
         
         channel.wait_close().unwrap();
-        tx.send(ExecutionState::Message(format!("Connection to server successful: {}", output))).unwrap();
+        tx.send(ExecutionState::Message(server_uuid, format!("Connection to server successful"))).unwrap();
 
     }
 
 
     pub fn async_test_ssh_connection(self, sender: Sender<ExecutionState>){
         let prefix = setup::get_config_prefix();
+        let server_uuid= self.uuid.unwrap().clone();
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
 
@@ -204,10 +179,10 @@ impl Server {
 
             let outcome = match result {
                 Ok(_) => {
-                    ExecutionState::Done
+                    ExecutionState::Done(server_uuid)
                 },
                 Err(e) => {
-                    ExecutionState::Error(utilities::parse_error(e))
+                    ExecutionState::Error(server_uuid, utilities::parse_error(e))
                 }
             };
             if let Err(e) = sender_result.send(outcome) {
@@ -235,6 +210,131 @@ impl Server {
         .expect("Failed to write servers.toml");
     }
 
+    pub fn run_tcpdump(&self, tx: &Sender<ServerTraffic>) {
+        let session = self.open_session(None);
+        let server_uuid = self.uuid.unwrap().clone();
+        let command = r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l not port 22"#;
+
+        let mut channel = session.channel_session().unwrap();
+        channel.exec(command).unwrap();
+
+        println!("{} tcpdump started, streaming packets...", server_uuid);
+
+        let mut buf = [0u8; 4096];
+        let mut leftover = String::new();
+        loop {
+            match channel.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    leftover.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    while let Some(pos) = leftover.find('\n') {
+                        let line = leftover[..pos].trim().to_string();
+                        leftover = leftover[pos + 1..].to_string();
+
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() < 6 || parts[1] != "IP" {
+                            continue;
+                        }
+
+                        let dst_raw = parts[4].trim_end_matches(':');
+                        let dot_count = dst_raw.matches('.').count();
+                        if dot_count < 3 {
+                            continue;
+                        }
+
+                        let last_dot = dst_raw.rfind('.').unwrap();
+                        let dst_ip = dst_raw[..last_dot].to_string();
+                        let size: u64 = parts.last()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0);
+
+                        if size == 0 {
+                            continue; // saltas ACKs, FINs, SYNs, etc.
+                        }
+                        tx.send(ServerTraffic::Package(
+                            server_uuid,
+                            utilities::TcpdumpPacket { dst_ip, size },
+                        )).unwrap();
+                    }
+                }
+                Err(e) => {
+                    tx.send(ServerTraffic::Error(server_uuid, format!("tcpdump read error: {}", e))).unwrap();
+                    break;
+                }
+            }
+        }
+
+
+
+        channel.wait_close().unwrap();
+
+        println!("{} tcpdump finished", server_uuid);
+    }
+
+
+    pub fn async_run_tcpdump(self, sender: Sender<ServerTraffic>) {
+        let prefix = setup::get_config_prefix();
+        let server_uuid = self.uuid.unwrap().clone();
+        thread::spawn(move || {
+            setup::set_config_prefix(prefix);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.run_tcpdump(&sender);
+            }));
+
+            match result {
+                Ok(_) => return,
+                Err(e) => ExecutionState::Error(server_uuid, utilities::parse_error(e)),
+            };
+
+        });
+    }
+
+    fn open_session(&self, tx: Option<&Sender<ExecutionState>>) -> Session {
+        let server_uuid = self.uuid.unwrap().clone();
+        let send_channel = |msg: &str| {
+            if let Some(channel) = tx {
+                channel.send(ExecutionState::Message(server_uuid, msg.to_string())).unwrap();
+            }
+        };
+
+        let tcp = TcpStream::connect_timeout(
+            &format!("{}:{}", self.server_ip, self.server_port).parse().unwrap(),
+            Duration::from_secs(10)
+        ).expect("Connection timed out. Server did not  respond");
+
+        let mut session = Session::new().expect("Failed to create SSH session");
+        
+        send_channel("SSH session created");
+
+        session.set_tcp_stream(tcp);
+        session.handshake().expect("SSH handshake failed. Check the server address");
+        send_channel("SSH handshake completed");
+
+        if self.use_password {
+            session.userauth_password(
+                &self.ssh_user,
+                &self.password,
+            ).expect("Password authentication failed. Check your credentials");
+            send_channel("Password authentication successful");
+        }else{
+            let passphrase = if self.use_passphrase{
+                Some(self.passphrase.as_str())
+            }else { None };
+
+            session.userauth_pubkey_file(
+                &self.ssh_user, None, 
+                &expand_path(&self.private_key_path), passphrase,
+            ).expect("SSH authentication failed. Check your credentials");
+            send_channel("SSH authentication successful");
+        }
+
+        if !session.authenticated() {
+            panic!("Authentication rejected by server");
+        }
+        session
+    }
+
 }
 
 impl ValidatedServer {
@@ -253,6 +353,8 @@ impl ValidatedServer {
         self.execution_channel= None;
         let prefix = setup::get_config_prefix();
         self.server.uuid= Some(Uuid::new_v4());
+        
+        let server_uuid= self.server.uuid.unwrap().clone();
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -262,10 +364,10 @@ impl ValidatedServer {
 
             let outcome = match result {
                 Ok(_) => {
-                    ExecutionState::Done
+                    ExecutionState::Done(server_uuid)
                 },
                 Err(e) => {
-                    ExecutionState::Error(utilities::parse_error(e))
+                    ExecutionState::Error(server_uuid, utilities::parse_error(e))
                 }
             };
             if let Err(e) = tx.send(outcome) {
@@ -277,7 +379,8 @@ impl ValidatedServer {
 
     fn write_to_file(&self, tx: Sender<ExecutionState>) 
     {
-        tx.send(ExecutionState::Message("Saving server to file...".to_string())).unwrap();
+        let server_uuid= self.server.uuid.unwrap().clone();
+        tx.send(ExecutionState::Message(server_uuid, "Saving server to file...".to_string())).unwrap();
         let mut servers = Server::get_servers();
         servers.push(self.server.clone());
         
@@ -293,7 +396,7 @@ impl ValidatedServer {
             encrypted
         )
         .expect("Failed to write servers.toml");
-        tx.send(ExecutionState::Message("Server saved successfully".to_string())).unwrap();
+        tx.send(ExecutionState::Message(server_uuid, "Server saved successfully".to_string())).unwrap();
     }
 
     pub fn update(mut self) {
@@ -302,6 +405,7 @@ impl ValidatedServer {
 
         self.execution_channel= None;
         let prefix = setup::get_config_prefix();
+        let server_uuid= self.server.uuid.unwrap().clone();
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -311,10 +415,10 @@ impl ValidatedServer {
 
             let outcome = match result {
                 Ok(_) => {
-                    ExecutionState::Done
+                    ExecutionState::Done(server_uuid)
                 },
                 Err(e) => {
-                    ExecutionState::Error(utilities::parse_error(e))
+                    ExecutionState::Error(server_uuid, utilities::parse_error(e))
                 }
             };
             if let Err(e) = tx.send(outcome) {
@@ -326,11 +430,12 @@ impl ValidatedServer {
 
     fn add_to_file(&self, tx: Sender<ExecutionState>) 
     {
-        tx.send(ExecutionState::Message("Saving server to file...".to_string())).unwrap();
+        let server_uuid= self.server.uuid.unwrap().clone();
+        tx.send(ExecutionState::Message(server_uuid, "Saving server to file...".to_string())).unwrap();
         let mut servers = Server::get_servers();
         if let Some(pos) = servers.iter().position(|s| s.uuid == self.server.uuid) {
             servers[pos] = self.server.clone();
-            tx.send(ExecutionState::Message("Server updated successfully".to_string())).unwrap();
+            tx.send(ExecutionState::Message(server_uuid, "Server updated successfully".to_string())).unwrap();
         }
         
         let content = format!(
@@ -345,11 +450,12 @@ impl ValidatedServer {
             encrypted
         )
         .expect("Failed to write servers.toml");
-        tx.send(ExecutionState::Message("Server saved successfully".to_string())).unwrap();
+        tx.send(ExecutionState::Message(server_uuid, "Server saved successfully".to_string())).unwrap();
     }
 
     
 }
+
 
 
 pub(crate) fn expand_path(key_path: &str) -> std::path::PathBuf {

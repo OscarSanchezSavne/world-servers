@@ -11,4 +11,6 @@ toml = { version = "0.8", features = ["parse"] }
 ssh2 = "0.9"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
-bevy = "0.18.1"
+bevy = { version = "0.19", features = ["free_camera"] }
+bevy_fontmesh = "0.6"
+"bevy_egui" = "0.41"

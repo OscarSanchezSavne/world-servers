@@ -3,7 +3,7 @@ mod tests {
     use std::{fs::{self}, path::PathBuf, str::FromStr};
     use uuid::Uuid;
 
-use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::ExecutionState};
+use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::{ExecutionState, ServerTraffic}};
 
     #[test]
     fn test_expand_tilde_relative() {
@@ -85,8 +85,8 @@ use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setu
     fn test_save_validated_server() 
     {
         setup::init_config(Some("test_save_validated_server".to_string()));
-        let server = Server {
-            uuid: Some(Uuid::new_v4()),
+        let server =Server {
+            uuid: None,
             server_name: "Test".into(),
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
@@ -108,12 +108,14 @@ use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setu
 
         for msg in rx {
             match msg {
-                ExecutionState::Message(text) => println!("{}", text),
-                ExecutionState::Done => {
+                ExecutionState::Message(_server_uuid, text) => {
+                    println!("{}", text);
+                },
+                ExecutionState::Done(_server_uuid) => {
                     println!("✅ Test completed successfully");
                     break;
                 }
-                ExecutionState::Error(e) => {
+                ExecutionState::Error(_server_uuid, e) => {
                     panic!("❌ Error: {}", e);
                 }
             }
@@ -171,9 +173,10 @@ password = ""
     #[test]
     fn test_async_test_ssh_connection()
     {
+        let uuid_new_server= Uuid::new_v4();
         init_config(Some("test_async_test_ssh_connection".to_string()));
         let server = Server {
-            uuid: Some(Uuid::new_v4()),
+            uuid: Some(uuid_new_server.clone()),
             server_name: "Test".into(),
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
@@ -188,12 +191,16 @@ password = ""
         server.async_test_ssh_connection(sender);
         for msg in receiver {
             match msg {
-                ExecutionState::Message(text) => println!("{}", text),
-                ExecutionState::Done => {
+                ExecutionState::Message(server_uuid, text) => {
+                    assert_eq!(uuid_new_server, server_uuid);
+                    println!("{}", text);
+                },
+                ExecutionState::Done(server_uuid) => {
+                    assert_eq!(uuid_new_server, server_uuid);
                     println!("✅ Test completed successfully");
                     break;
                 }
-                ExecutionState::Error(e) => {
+                ExecutionState::Error(_server_uuid, e) => {
                     panic!("❌ Error: {}", e);
                 }
             }
@@ -208,7 +215,7 @@ password = ""
     {
         setup::init_config(Some("test_delete".to_string()));
         let server = Server {
-            uuid: Some(Uuid::new_v4()),
+            uuid: None,
             server_name: "Test".into(),
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
@@ -230,12 +237,14 @@ password = ""
 
         for msg in rx {
             match msg {
-                ExecutionState::Message(text) => println!("{}", text),
-                ExecutionState::Done => {
+                ExecutionState::Message(_server_uuid, text) => {
+                    println!("{}", text);
+                },
+                ExecutionState::Done(_server_uuid) => {
                     println!("✅ Test completed successfully");
                     break;
                 }
-                ExecutionState::Error(e) => {
+                ExecutionState::Error(_server_uuid, e) => {
                     panic!("❌ Error: {}", e);
                 }
             }
@@ -257,7 +266,7 @@ password = ""
     {
         setup::init_config(Some("test_update".to_string()));
         let server = Server {
-            uuid: Some(Uuid::new_v4()),
+            uuid: None,
             server_name: "Test".into(),
             server_ip: "127.0.0.1".into(),
             ssh_user: "root".into(),
@@ -270,7 +279,7 @@ password = ""
         };
         
         let validated = server.validate().unwrap();
-        let validated_to_update= validated.clone();
+        let mut validated_to_update= validated.clone();
 
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
 
@@ -278,32 +287,42 @@ password = ""
             .set_execution_channel(tx)
             .save();
 
+        let mut uuid_new_server= None;
         for msg in rx {
             match msg {
-                ExecutionState::Message(text) => println!("{}", text),
-                ExecutionState::Done => {
+                ExecutionState::Message(_server_uuid, text) => {
+                    println!("{}", text);
+                },
+                ExecutionState::Done(server_uuid) => {
+                    uuid_new_server= Some(server_uuid);
                     println!("✅ Test completed successfully");
                     break;
                 }
-                ExecutionState::Error(e) => {
+                ExecutionState::Error(_server_uuid, e) => {
                     panic!("❌ Error: {}", e);
                 }
             }
         }
 
+        validated_to_update.server.uuid= uuid_new_server;
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
         validated_to_update
             .set_execution_channel(tx)
             .update();
 
+        let uuid_new_server= uuid_new_server.unwrap_or(Uuid::new_v4());
         for msg in rx {
             match msg {
-                ExecutionState::Message(text) => println!("{}", text),
-                ExecutionState::Done => {
+                ExecutionState::Message(server_uuid, text) => {
+                    assert_eq!(uuid_new_server, server_uuid);
+                    println!("{}", text);
+                },
+                ExecutionState::Done(server_uuid) => {
+                    assert_eq!(uuid_new_server, server_uuid);
                     println!("✅ Test completed successfully");
                     break;
                 }
-                ExecutionState::Error(e) => {
+                ExecutionState::Error(_server_uuid, e) => {
                     panic!("❌ Error: {}", e);
                 }
             }
@@ -314,5 +333,46 @@ password = ""
         setup::clean_config();
 
     }
+
+    #[test]
+    fn test_async_run_tcpdump()
+    {
+        let uuid_new_server = Uuid::new_v4();
+        init_config(Some("test_async_run_tcpdump".to_string()));
+        let server = Server {
+            uuid: Some(uuid_new_server.clone()),
+            server_name: "Test".into(),
+            server_ip: "127.0.0.1".into(),
+            ssh_user: "root".into(),
+            password: "root".into(),
+            server_port: 2222,
+            use_password: true,
+            private_key_path: "".into(),
+            use_passphrase: false,
+            passphrase: "".into(),
+        };
+        let (sender, receiver) = std::sync::mpsc::channel::<ServerTraffic>();
+        server.async_run_tcpdump(sender);
+        let mut i=0;
+        for msg in receiver {
+            match msg {
+                ServerTraffic::Package(server_uuid, package) => {
+                    i= i+1;
+                    assert_eq!(uuid_new_server, server_uuid);
+                    dbg!("{}", package);
+                },
+                ServerTraffic::Error(server_uuid, e) => {
+                    assert_eq!(uuid_new_server, server_uuid);
+                    panic!("❌ Error: {}", e);
+                }
+            }
+            if i > 2 {
+                break;
+            }
+        }
+
+        setup::clean_config();
+    }
+
 
 }
