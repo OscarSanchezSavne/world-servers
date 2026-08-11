@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+
 use crate::visualizer;
 
 
@@ -16,20 +17,20 @@ pub fn create(
 
     server.position= Vec3 { x: cell.position.x + 6.3, y: cell.position.y - 6.8, z: 0.25};
 
-    let mut newServerComponent= server.clone();
+    let mut new_server_component= server.clone();
     let server_entity= commands.spawn((
         WorldAssetRoot(hex_handle.clone()),
         Transform {
-            translation: newServerComponent.position,
+            translation: new_server_component.position,
             scale: Vec3::splat(0.8),
             ..default()
         },
         cell.clone(),
     )).id();
     
-    newServerComponent.entity= Some(server_entity);
+    new_server_component.entity= Some(server_entity);
 
-    commands.entity(server_entity).insert(newServerComponent);
+    commands.entity(server_entity).insert(new_server_component);
 
     commands.spawn((
         Text::new(server.name.clone()),

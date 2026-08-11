@@ -210,10 +210,15 @@ impl Server {
         .expect("Failed to write servers.toml");
     }
 
-    pub fn run_tcpdump(&self, tx: &Sender<ServerTraffic>) {
+    pub fn run_tcpdump(&self, tx: &Sender<ServerTraffic>, inbound: bool) {
         let session = self.open_session(None);
         let server_uuid = self.uuid.unwrap().clone();
-        let command = r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l not port 22"#;
+
+        let command = if inbound{
+            r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l inbound and not port 22"#
+        }else{
+            r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l outbound and not port 22"#
+        };
 
         let mut channel = session.channel_session().unwrap();
         channel.exec(command).unwrap();
@@ -238,12 +243,22 @@ impl Server {
 
                         let dst_raw = parts[4].trim_end_matches(':');
                         let dot_count = dst_raw.matches('.').count();
-                        if dot_count < 3 {
-                            continue;
-                        }
+                        let dst_ip = if dot_count == 3 {
+                            dst_raw.to_string()
+                        } else {
+                            let last_dot = dst_raw.rfind('.').unwrap();
+                            dst_raw[..last_dot].to_string()
+                        };
 
-                        let last_dot = dst_raw.rfind('.').unwrap();
-                        let dst_ip = dst_raw[..last_dot].to_string();
+                        let src_raw = parts[2]; 
+                        let dot_count_src = src_raw.matches('.').count();
+                        let src_ip = if dot_count_src == 3 {
+                            src_raw.to_string()
+                        } else {
+                            let last_dot = src_raw.rfind('.').unwrap();
+                            src_raw[..last_dot].to_string()
+                        };
+
                         let size: u64 = parts.last()
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(0);
@@ -253,7 +268,7 @@ impl Server {
                         }
                         tx.send(ServerTraffic::Package(
                             server_uuid,
-                            utilities::TcpdumpPacket { dst_ip, size },
+                            utilities::TcpdumpPacket {src_ip, dst_ip, size, inbound},
                         )).unwrap();
                     }
                 }
@@ -272,14 +287,14 @@ impl Server {
     }
 
 
-    pub fn async_run_tcpdump(self, sender: Sender<ServerTraffic>) {
+    pub fn async_run_tcpdump(self, sender: Sender<ServerTraffic>, inbound: bool) {
         let prefix = setup::get_config_prefix();
         let server_uuid = self.uuid.unwrap().clone();
         thread::spawn(move || {
             setup::set_config_prefix(prefix);
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.run_tcpdump(&sender);
+                self.run_tcpdump(&sender, inbound);
             }));
 
             match result {

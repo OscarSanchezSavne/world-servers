@@ -221,25 +221,37 @@ pub fn capture_traffic(
         };
 
         let (tx, rx) = std::sync::mpsc::channel::<ui::utilities::ServerTraffic>();
-
+        
+        // Hilo 1: outbound
+        let core1 = core_server.clone();
+        let tx1 = tx.clone();
         std::thread::spawn(move || {
-            core_server.async_run_tcpdump(tx);
+            core1.async_run_tcpdump(tx1, false);
         });
 
-        let tx_packages= package_data_queue.tx.clone();
+        // Hilo 2: inbound
+        let tx2 = tx.clone();
+        std::thread::spawn(move || {
+            core_server.async_run_tcpdump(tx2, true);
+        });
+
+        // Un solo hilo de consumo (rx no se clona)
+        let tx_packages = package_data_queue.tx.clone();
         std::thread::spawn(move || {
             while let Ok(msg) = rx.recv() {
                 match msg {
-                    Package(server_uuid, package)=>{
-                        tx_packages.send(visualizer::component::package_data::RawPackage{
-                            server_uuid: server_uuid,
-                            package_data: package
-                        }).unwrap();
+                    Package(server_uuid, package) => {
+                        tx_packages
+                            .send(visualizer::component::package_data::RawPackage {
+                                server_uuid,
+                                package_data: package,
+                            })
+                            .unwrap();
                     }
-                    _=> {}
+                    _ => {}
                 }
             }
-        });
+        }); 
 
     }
  

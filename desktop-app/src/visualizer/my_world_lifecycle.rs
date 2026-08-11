@@ -1,6 +1,7 @@
-use bevy::{DefaultPlugins, app::{App, Update}, camera_controller::free_camera::FreeCameraPlugin, ecs::{resource::Resource, system::{Commands, Query, ResMut, Single}}, state::{app::AppExtStates}, time::{Time, Timer, TimerMode}, window::Window};
+use bevy::{DefaultPlugins, app::{App, Update}, ecs::system::Commands, state::app::AppExtStates};
 use bevy_egui::EguiPrimaryContextPass;
 
+use bevy::prelude::*;
 use crate::visualizer;
 
 pub fn big_bang() {
@@ -15,9 +16,11 @@ pub fn big_bang() {
             visualizer::entity::world_entity::create
         ))
         .add_systems(Update, visualizer::system::grid_system::build)
+        
         .add_systems(Update, visualizer::system::server_system::create)
         .add_systems(EguiPrimaryContextPass, visualizer::system::log_system::update)
-        //.add_systems(Update, testing)
+        .add_systems(EguiPrimaryContextPass, visualizer::system::panel_server_filters::update)
+
         .add_systems(
             Update, visualizer::system::server_label_system::update_positions.run_if(
                 in_state(visualizer::data::world_data::WorldState::GridLoaded)
@@ -25,6 +28,8 @@ pub fn big_bang() {
         )
         .add_systems(Update, visualizer::system::server_system::connect)
         .add_systems(Update, visualizer::system::log_system::handle_server_ssh_messages)
+
+
         .add_systems(Update, visualizer::system::server_system::refresh_connection_state)
         .add_systems(Update, visualizer::system::grid_system::add_color_by_server_type)
         .add_systems(Update, visualizer::system::grid_system::pulse_cells)
@@ -40,60 +45,11 @@ pub fn big_bang() {
 fn setup_resources(
     mut commands: Commands,
 ) {
-    commands.insert_resource(
-        GridExpandTimer(Timer::from_seconds(100.0, TimerMode::Repeating))
-    );
-
     commands.insert_resource(visualizer::resource::log_buffer::LogBuffer::default());
     commands.insert_resource(visualizer::resource::package_data_queue::PackageDataQueue::default());
+    commands.insert_resource(visualizer::resource::server_filter_state::ServerFilterState::default());
     commands.spawn(visualizer::component::grid::Grid::create());
     commands.spawn(visualizer::component::servers::Servers::create());
 }
 
-fn maximize_window(mut window: Single<&mut Window>) {
-    window.set_maximized(true);
-}
 
-
-use bevy::prelude::*;
-
-#[derive(Resource)]
-pub struct GridExpandTimer(pub Timer);
-
-
-
-pub fn testing(
-    mut camera_query: Query<&mut Transform, With<Camera3d>>,
-    mut gizmos: Gizmos,
-    time: Res<Time>,
-    mut timer: ResMut<GridExpandTimer>,
-    mut grid_query: Query<&mut visualizer::component::grid::Grid>
-) 
-{
-    /*gizmos.text_2d(
-        Isometry2d::from_translation(Vec2::new(0.0, 0.0)),
-        "ACA ESTOOOOY---",
-        2.0,
-        Vec2::ZERO,
-        Color::WHITE,
-    );*/
-    gizmos.line(Vec3::new(0.0, 0.0, 0.5), Vec3::new(12.5, 0.0, 0.5), Color::srgb(1.0, 0.0, 0.0),);
-    gizmos.line(Vec3::new(0.0, 0.0, 0.5), Vec3::new(0.0, -13.5, 0.5), Color::srgb(1.0, 0.0, 0.0),);
-    if let Ok(mut camera) = camera_query.single_mut() {
-        //println!("Camera x:{} y:{} z:{}", camera.translation.x, camera.translation.y,camera.translation.z);
-        // Centrar cámara en el nuevo grid
-        /*let center_y = (grid.rows as f32 * 18.0) / 1.0;
-        camera.translation.y = center_y; // mueve la cámara hacia arriba
-        let center_x = (grid.cols as f32 * 7.5) / 1.0;
-        camera.translation.y = center_x; // mueve la cámara hacia arriba*/
-    }
-
-    if !timer.0.tick(time.delta()).just_finished() {
-        return;
-    }
-
-    if let Ok(mut grid) = grid_query.single_mut() {
-        grid.expand_border();
-    }
-
-} 

@@ -22,8 +22,10 @@ pub enum ServerTraffic {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TcpdumpPacket {
+    pub src_ip: String,
     pub dst_ip: String,
     pub size: u64,
+    pub inbound: bool,
 }
 
 

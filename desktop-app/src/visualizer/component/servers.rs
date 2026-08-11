@@ -23,7 +23,8 @@ impl Servers {
                 uuid: server.uuid.clone(),
                 entity: None,
                 entity_cell: None,
-                position: Vec3::ZERO
+                position: Vec3::ZERO,
+                visible: true,
             });
         }
         Self { 
@@ -45,7 +46,8 @@ impl Servers {
             uuid: Some(Uuid::new_v4()),
             entity: None,
             entity_cell: None,
-            position: Vec3::ZERO
+            position: Vec3::ZERO,
+            visible: true,
         });
     }
 
