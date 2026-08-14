@@ -1,4 +1,4 @@
-use bevy::{camera::Exposure, core_pipeline::tonemapping::Tonemapping, post_process::bloom::Bloom, prelude::*, render::view::{ColorGrading, ColorGradingGlobal}};
+use bevy::{camera::Exposure, core_pipeline::tonemapping::Tonemapping, prelude::*, render::view::{ColorGrading, ColorGradingGlobal}};
 
 use crate::visualizer;
 
@@ -9,8 +9,8 @@ pub fn create(
     commands.insert_resource(ClearColor(Color::srgb_u8(0x08, 0x11, 0x1D)));
 
     // Cámara
-    let focus = Vec3::new(24.98, -11.34, 0.0);
-    let distance = 41.12;
+    let focus = Vec3::new(47.1, -25.0, 0.0);
+    let distance = 65.0;
 
     commands.spawn((
         Camera3d::default(),
@@ -23,7 +23,6 @@ pub fn create(
             ..default()
         },
         Exposure { ev100: 9.5 },
-        Bloom { intensity: 0.06, ..Bloom::NATURAL },
     ));
 
 

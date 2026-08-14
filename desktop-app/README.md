@@ -1,5 +1,10 @@
 Commands
 
+Asegurarse que el usuario si ejecuta tcpdump sin clave
+
+    Sudo sin contraseña solo para tcpdump (en /etc/sudoers):
+    tu_usuario ALL=(ALL) NOPASSWD: /usr/sbin/tcpdump
+
 cd desktop-app2 
 cargo run
 cargo test
@@ -8,6 +13,12 @@ cargo test -- --no-capture test_clean_config
 
 docker run --rm --name ssh-test -p 2222:22 rastasheep/ubuntu-sshd:18.04
 Clave root:root
+
+-- Configurar contenedor
+docker exec -it ssh-test bash
+apt-get update
+apt-get install -y tcpdump iproute2
+apt-get install -y sudo
 sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l not port 22
 
 
@@ -20,7 +31,7 @@ cargo run -- --visualizer
 Camara por defecto
 
 
-        .add_plugins(FreeCameraPlugin)
+    .add_plugins(FreeCameraPlugin)
 
 
     commands.spawn((

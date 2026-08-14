@@ -3,7 +3,7 @@ mod tests {
     use std::{fs::{self}, path::PathBuf, str::FromStr};
     use uuid::Uuid;
 
-use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::{ExecutionState, ServerTraffic}};
+use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setup::{self, config_path, init_config}}}, ui::utilities::{ExecutionState, ServerMetrics, ServerTraffic}};
 
     #[test]
     fn test_expand_tilde_relative() {
@@ -352,7 +352,7 @@ password = ""
             passphrase: "".into(),
         };
         let (sender, receiver) = std::sync::mpsc::channel::<ServerTraffic>();
-        server.async_run_tcpdump(sender);
+        server.async_run_tcpdump(sender, true);
         let mut i=0;
         for msg in receiver {
             match msg {
@@ -372,6 +372,42 @@ password = ""
         }
 
         setup::clean_config();
+    }
+
+    #[test]
+    fn test_async_get_metrics_avg()
+    {
+        let uuid_new_server= Uuid::new_v4();
+        init_config(Some("test_async_get_metrics_avg".to_string()));
+        let server = Server {
+            uuid: Some(uuid_new_server.clone()),
+            server_name: "Test".into(),
+            server_ip: "127.0.0.1".into(),
+            ssh_user: "root".into(),
+            password: "root".into(),
+            server_port: 2222,
+            use_password: true,
+            private_key_path: "".into(),
+            use_passphrase: false,
+            passphrase: "".into(),
+        };
+        let (sender, receiver) = std::sync::mpsc::channel::<ServerMetrics>();
+        server.async_get_metrics_avg(sender);
+        for msg in receiver {
+            match msg {
+                ServerMetrics::Done(server_uuid, _cpu, _ram, _disk) => {
+                    assert_eq!(uuid_new_server, server_uuid);
+                    println!("✅ Test completed successfully");
+                    break;
+                }
+                ServerMetrics::Error(_server_uuid, e) => {
+                    panic!("❌ Error: {}", e);
+                }
+            }
+        }
+
+        setup::clean_config();
+
     }
 
 

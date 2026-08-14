@@ -25,6 +25,9 @@ impl Servers {
                 entity_cell: None,
                 position: Vec3::ZERO,
                 visible: true,
+                entity_disk_load: None,
+                entity_cpu_load: None,
+                entity_ram_load: None,
             });
         }
         Self { 
@@ -48,6 +51,9 @@ impl Servers {
             entity_cell: None,
             position: Vec3::ZERO,
             visible: true,
+                entity_disk_load: None,
+                entity_cpu_load: None,
+                entity_ram_load: None,
         });
     }
 

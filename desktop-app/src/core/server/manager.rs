@@ -1,10 +1,10 @@
 use std::{io::Read, net::TcpStream, sync::mpsc::{Sender}, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
-use ssh2::Session;
+use ssh2::{ExtendedData, Session};
 use uuid::Uuid;
 
-use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState, ServerTraffic}};
+use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState, ServerMetrics, ServerTraffic}};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,14 +214,30 @@ impl Server {
         let session = self.open_session(None);
         let server_uuid = self.uuid.unwrap().clone();
 
-        let command = if inbound{
-            r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l inbound and not port 22"#
-        }else{
-            r#"sudo tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l outbound and not port 22"#
+        let command = if inbound {
+            r#"sudo -n tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l inbound and not port 22"#
+        } else {
+            r#"sudo -n tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l outbound and not port 22"#
         };
 
-        let mut channel = session.channel_session().unwrap();
-        channel.exec(command).unwrap();
+        let mut channel = match session.channel_session() {
+            Ok(channel) => channel,
+
+            Err(e) => {
+                let _ = tx.send(ServerTraffic::Error(server_uuid, format!("Unable to open SSH channel: {}", e)));
+                return;
+            }
+        };
+
+        if let Err(e) = channel.handle_extended_data(ExtendedData::Merge) {
+            let _ = tx.send(ServerTraffic::Error(server_uuid, format!("Unable to merge stderr: {}", e)));
+            return;
+        }
+
+        if let Err(e) = channel.exec(command) {
+            let _ = tx.send(ServerTraffic::Error(server_uuid, format!("Unable to start tcpdump: {}", e)));
+            return;
+        }
 
         println!("{} tcpdump started, streaming packets...", server_uuid);
 
@@ -236,31 +252,22 @@ impl Server {
                         let line = leftover[..pos].trim().to_string();
                         leftover = leftover[pos + 1..].to_string();
 
+                        if line.is_empty() {
+                            continue;
+                        }
+
                         let parts: Vec<&str> = line.split_whitespace().collect();
                         if parts.len() < 6 || parts[1] != "IP" {
                             continue;
                         }
 
-                        let dst_raw = parts[4].trim_end_matches(':');
-                        let dot_count = dst_raw.matches('.').count();
-                        let dst_ip = if dot_count == 3 {
-                            dst_raw.to_string()
-                        } else {
-                            let last_dot = dst_raw.rfind('.').unwrap();
-                            dst_raw[..last_dot].to_string()
-                        };
+                        let dst_ip = tcpdump_ip(parts[4]);
+                        let src_ip = tcpdump_ip(parts[2]);
 
-                        let src_raw = parts[2]; 
-                        let dot_count_src = src_raw.matches('.').count();
-                        let src_ip = if dot_count_src == 3 {
-                            src_raw.to_string()
-                        } else {
-                            let last_dot = src_raw.rfind('.').unwrap();
-                            src_raw[..last_dot].to_string()
-                        };
-
-                        let size: u64 = parts.last()
-                            .and_then(|s| s.parse().ok())
+                        let size = parts
+                            .windows(2)
+                            .find(|w| w[0] == "length")
+                            .and_then(|w| w[1].parse::<u64>().ok())
                             .unwrap_or(0);
 
                         if size == 0 {
@@ -268,7 +275,7 @@ impl Server {
                         }
                         tx.send(ServerTraffic::Package(
                             server_uuid,
-                            utilities::TcpdumpPacket {src_ip, dst_ip, size, inbound},
+                            utilities::TcpdumpPacket {src_ip, dst_ip, size, inbound, internal: None},
                         )).unwrap();
                     }
                 }
@@ -350,7 +357,98 @@ impl Server {
         session
     }
 
+
+    pub fn get_metrics_avg(&self) -> (f32, f32, f32) {
+        let session = self.open_session(None);
+
+        // Una sola ejecución: CPU, RAM, Discos
+        let command = r#"
+        LC_ALL=C top -bn2 -d 1 | awk '/%Cpu/ {cpu=100-$8} END {print cpu}';
+        free | awk '/Mem:/ {print $3/$2}';
+        df -P -T | awk '
+        NR > 1 &&
+        $1 ~ "^/dev/" &&
+        $2 != "squashfs" {
+            total += $3;
+            used += $4;
+        }
+        END {
+            if (total > 0)
+                print used / total;
+            else
+                print 0;
+        }'
+        "#;
+
+        let mut channel = session.channel_session().unwrap();
+        channel.exec(command).unwrap();
+
+        let mut output = String::new();
+        channel.read_to_string(&mut output).unwrap();
+        channel.wait_close().unwrap();
+
+        let values: Vec<f32> = output
+            .lines()
+            .filter_map(|line| line.trim().parse::<f32>().ok())
+            .collect();
+
+        if values.len() < 3 {
+            return (0.0, 0.0, 0.0);
+        }
+
+        let cpu = values[0] / 100.0;
+        let ram = values[1];
+        let disk = values[2];
+
+        (
+            ((cpu * 100.0).round() / 100.0),
+            ((ram * 100.0).round() / 100.0),
+            ((disk * 100.0).round() / 100.0),
+        )
+    }
+
+
+    pub fn async_get_metrics_avg(self, sender: Sender<ServerMetrics>){
+        let prefix = setup::get_config_prefix();
+        let server_uuid= self.uuid.unwrap().clone();
+        thread::spawn(move || {
+            setup::set_config_prefix(prefix);
+
+            let sender_result= sender.clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.get_metrics_avg()
+            }));
+
+            let outcome = match result {
+                Ok((cpu, ram, disk)) => {
+                    ServerMetrics::Done(server_uuid, cpu, ram, disk)
+                },
+                Err(e) => {
+                    ServerMetrics::Error(server_uuid, utilities::parse_error(e))
+                }
+            };
+            if let Err(e) = sender_result.send(outcome) {
+                eprintln!("[Warning] Failed to send execution result: {}", e);
+            }
+        });
+    }
+
 }
+
+
+fn tcpdump_ip(value: &str) -> String {
+    let value = value.trim_end_matches(':');
+
+    if value.matches('.').count() <= 3 {
+        return value.to_string();
+    }
+
+    match value.rfind('.') {
+        Some(pos) => value[..pos].to_string(),
+        None => value.to_string(),
+    }
+}
+
 
 impl ValidatedServer {
 

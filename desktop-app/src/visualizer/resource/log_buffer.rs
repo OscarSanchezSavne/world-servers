@@ -18,7 +18,7 @@ impl Default for LogBuffer {
         let (tx, rx) = std::sync::mpsc::channel::<ExecutionState>();
         Self { 
             lines: Vec::new(), 
-            minimized: false, 
+            minimized: true, 
             rx: Mutex::new(rx), 
             tx: tx
         }

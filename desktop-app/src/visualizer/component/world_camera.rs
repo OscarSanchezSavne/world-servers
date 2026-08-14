@@ -31,7 +31,20 @@ impl WorldCamera {
             zoom_sensitivity: 0.12,
 
             min_distance: 10.0,
-            max_distance: 200.0,
+            max_distance: 600.0,
         }
     }
+}
+
+
+#[derive(Component)]
+pub struct Zoom {
+    pub target: Vec3,
+    pub target_distance: f32,
+    pub start_focus: Vec3,
+    pub start_distance: f32,
+    pub elapsed: f32,
+}
+
+impl Zoom {
 }

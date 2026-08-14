@@ -19,7 +19,8 @@ impl Grid {
     pub fn create() -> Self {
 
         let mut positions:Vec<(usize, usize)>= Vec::new();
-        let count= core::server::manager::Server::get_servers().len();
+        let count= core::server::manager::Server::get_servers().len() * 8;
+        let count= if count < 30 {30}else{count};
         let mut cols= 3;
         let mut rows= 2;
 

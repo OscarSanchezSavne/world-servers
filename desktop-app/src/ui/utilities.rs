@@ -14,6 +14,11 @@ pub enum ExecutionState {
     Message(Uuid, String), Done(Uuid), Error(Uuid, String),
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub enum ServerMetrics {
+    Done(Uuid, f32, f32, f32), Error(Uuid, String),
+}
+
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum ServerTraffic {
@@ -26,6 +31,7 @@ pub struct TcpdumpPacket {
     pub dst_ip: String,
     pub size: u64,
     pub inbound: bool,
+    pub internal: Option<bool>,
 }
 
 

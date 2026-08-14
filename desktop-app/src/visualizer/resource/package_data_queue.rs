@@ -24,8 +24,10 @@ impl PackageDataQueue {
 
     pub fn add(&mut self, raw_package: visualizer::component::package_data::RawPackage)
     {
-        let total_packages= self.packages.iter().filter(|package|{
-            package.server_uuid == raw_package.server_uuid && package.package_data.inbound == raw_package.package_data.inbound
+        let total_packages = self.packages.iter().filter(|package| {
+            package.server_uuid == raw_package.server_uuid
+                && package.package_data.inbound == raw_package.package_data.inbound
+                && package.package_data.internal == raw_package.package_data.internal
         });
         if total_packages.count() < 30{
             self.packages.push(raw_package);

@@ -38,8 +38,9 @@ pub fn update(
                         //ui.set_width(LOG_WIDTH);
 
                         ui.label(
-                            egui::RichText::new("Live Log")
-                                .color(egui::Color32::GREEN),
+                            egui::RichText::new("SSH connection log")
+                                .color(egui::Color32::from_rgb(47, 128, 237))
+                                .size(10.0),
                         );
 
                         // Empuja el botón a la derecha

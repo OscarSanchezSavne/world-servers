@@ -1,3 +1,5 @@
+use std::os::unix::process::CommandExt;
+
 use bevy::ecs::system::{Query, ResMut};
 use bevy_egui::{egui, EguiContexts};
 use bevy::prelude::*;
@@ -14,8 +16,8 @@ pub fn update(
     };
 
     const PANEL_WIDTH: f32 = 220.0;
-    const PANEL_HEIGHT: f32 = 100.0;
-    const PANEL_HEIGHT_MINIMIZED: f32 = 20.0;
+    const PANEL_HEIGHT: f32 = 200.0;
+    const PANEL_HEIGHT_MINIMIZED: f32 = 48.0;
 
     egui::Area::new("ServerFilters".into())
         .order(egui::Order::Foreground)
@@ -30,11 +32,17 @@ pub fn update(
                     ));
                     ui.set_max_width(PANEL_WIDTH);
                     ui.set_width(PANEL_WIDTH);
+                    ui.set_max_height(
+                        if filter_state.minimized{PANEL_HEIGHT_MINIMIZED}else{PANEL_HEIGHT}
+                    );
 
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("Show Server Traffic")
-                                .color(egui::Color32::from_rgb(54, 200, 255)), // cian brillos
+                            egui::RichText::new(
+                                format!("Show Server Traffic ({})", servers_query.iter().count())
+                            )
+                            .color(egui::Color32::from_rgb(47, 128, 237))
+                            .size(10.0),
                         );
 
                         // Empuja el botón a la derecha
@@ -50,27 +58,36 @@ pub fn update(
                         );
                     });
 
-                    ui.separator();
-
                     if !filter_state.minimized {
+
+                        ui.separator();
                         egui::ScrollArea::vertical()
                             .max_height(180.0)
                             .auto_shrink([false, true]) 
                             .show(ui, |ui| {
                                 ui.set_width(PANEL_WIDTH);
-
-                                let mut servers: Vec<Mut<visualizer::component::server::Server>> =
-                                    servers_query.iter_mut().collect();
-
-                                servers.sort_by(|a, b| {
-                                    a.name.to_lowercase().cmp(&b.name.to_lowercase())
-                                });
-                                for server in servers.iter_mut() {
+                                let mut servers: Vec<_> = servers_query.iter_mut().collect();
+                                servers.reverse();
+                                for mut server in servers {
                                     let name = server.name.clone(); 
                                     ui.checkbox(&mut server.visible, &name);
                                 }
                             });
                     }
+
+                    // Botón Exit
+                    ui.separator();
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            if ui.button("Exit").clicked() {
+                                let self_path = std::env::current_exe().unwrap();
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                let err = std::process::Command::new(self_path).exec();
+                                panic!("exec failed: {}", err);
+                            }
+                        },
+                    );
                 });
         });
 }
