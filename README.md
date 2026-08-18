@@ -1,52 +1,52 @@
 # WorldServers
 
-**Monitorización en tiempo real de servidores remotos en un mundo 3D.**
+**Real-time monitoring of remote servers in a 3D world.**
 
-WorldServers es una aplicación de escritorio (Rust + Bevy 3D) que visualiza servidores Debian/Ubuntu remotos como objetos 3D con métricas de CPU, RAM, disco y tráfico de red en tiempo real. Cada servidor ejecuta un agente ligero que captura las métricas y conexiones salientes, y las envía por UDP a la aplicación de escritorio.
+WorldServers is a desktop application (Rust + Bevy 3D) that visualizes remote Debian/Ubuntu servers as 3D objects with real-time CPU, RAM, disk and network traffic metrics. Each server runs a lightweight agent that captures metrics and outbound connections, and sends them via UDP to the desktop application.
 
-> Open source · desarrollado por **https://savne.net**
-
----
-
-## ✨ Características
-
-- **Registro de servidores** vía SSH con soporte de clave privada (con o sin passphrase) o contraseña.
-- **Mundo 3D interactivo** 
-- **Captura de tráfico de red** en tiempo real: paquetes entrantes y salientes entre servidores, con líneas que muestran cada conexión.
+> Open source · developed by **https://savne.net**
 
 ---
 
-## 🚀 Cómo empezar
+## Features
 
-### Requisitos
-
-- Los servidores objetivo deben ser **Debian/Ubuntu** con `tcpdump` (`sudo apt install tcpdump`).
-- SSH accesible desde la máquina que ejecuta la app.
-
----
-
-## 🔒 Seguridad
-
-- La autenticación SSH usa clave privada o contraseña.
-- La configuración de servidores se guarda cifrada en `servers.toml`.
+- **Server registration** via SSH with support for private keys (with or without passphrase) or password.
+- **Interactive 3D world**.
+- **Real-time network traffic capture**: inbound and outbound packets between servers, with lines showing each connection.
 
 ---
 
-## 🧪 Tests
+## Getting Started
+
+### Requirements
+
+- Target servers must be **Debian/Ubuntu** with `tcpdump` (`sudo apt install tcpdump`).
+- SSH accessible from the machine running the app.
+
+---
+
+## Security
+
+- SSH authentication uses a private key or password.
+- Server configuration is stored encrypted in `servers.toml`.
+
+---
+
+## Tests
 
 ```bash
 cd desktop-app
 cargo test
-cargo test -- --nocapture 
+cargo test -- --nocapture
 ```
 
 ---
 
-## 📦 Generar el AppImage (Linux)
+## Building the AppImage (Linux)
 
-El AppImage se genera dentro de un **contenedor Debian 12** para garantizar compatibilidad con glibc de sistemas Debian 12 y superiores.
+The AppImage is generated inside a **Debian 12 container** to guarantee compatibility with glibc on Debian 12 systems and later.
 
-### 1. Preparar el contenedor de build
+### 1. Prepare the build container
 
 ```bash
 cd .devops
@@ -54,25 +54,25 @@ docker compose up --build
 docker compose run --rm build bash
 ```
 
-### 2. Dentro del contenedor
+### 2. Inside the container
 
 ```bash
-# Compilar release en Debian 12
+# Build release in Debian 12
 cd desktop-app
 cargo build -p desktop-app --release
 cd ..
 
-# Copiar binario al AppDir
+# Copy the binary to the AppDir
 cp desktop-app/target/release/desktop-app desktop-app/AppDir/usr/bin/worldservers
 
-# Configurar salida y limpiar librerías para que se regeneren desde Debian 12
+# Set the output and clean libraries so they regenerate from Debian 12
 export OUTPUT=/app/desktop-app/AppDir/WorldServers-x86_64.deb12.AppImage
 export ARCH=x86_64
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 rm -rf desktop-app/AppDir/usr/lib/*
 
-# Generar el AppImage con linuxdeploy
+# Generate the AppImage with linuxdeploy
 linuxdeploy --appdir desktop-app/AppDir \
   --executable desktop-app/AppDir/usr/bin/worldservers \
   --desktop-file desktop-app/AppDir/usr/share/applications/worldservers.desktop \
@@ -80,16 +80,16 @@ linuxdeploy --appdir desktop-app/AppDir \
   --output appimage
 ```
 
-El AppImage resultante queda en `desktop-app/AppDir/WorldServers-x86_64.deb12.AppImage`.
+The resulting AppImage is placed at `desktop-app/AppDir/WorldServers-x86_64.deb12.AppImage`.
 
 ---
 
-## 🗂️ Persistencia
+## Persistence
 
-- `.config/servers.toml` — servidores registrados (cifrado).
+- `.config/servers.toml` — registered servers (encrypted).
 
 ---
 
-## 📄 Licencia
+## License
 
-Proyecto open source bajo licencia MIT. Ver el archivo [LICENSE](../LICENSE).
+Open source project under the MIT license. See the [LICENSE](../LICENSE) file.
