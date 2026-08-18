@@ -347,7 +347,7 @@ impl Server {
             session.userauth_pubkey_file(
                 &self.ssh_user, None, 
                 &expand_path(&self.private_key_path), passphrase,
-            ).expect("SSH authentication failed. Check your credentials");
+            ).expect("SSH authentication failed. Check your private ssh key.");
             send_channel("SSH authentication successful");
         }
 

@@ -1,2 +1,5 @@
 /target
 /.config
+AppDir/*.AppImage
+AppDir/usr/bin/*
+AppDir/usr/lib/*

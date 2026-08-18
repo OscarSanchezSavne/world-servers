@@ -1,0 +1,14 @@
+services:
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile.debian12
+    container_name: worldservers-build
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+    stdin_open: true
+    tty: true

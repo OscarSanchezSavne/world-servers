@@ -3,15 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, TextureHandle};
 use crate::core::server::manager::{self, Server};
-use crate::core::{server, system};
-use crate::core::system::setup::{Setup, load_config};
+use crate::core::{server};
 use crate::ui::{self, style_global};
 use crate::ui::style_global::StyleGlobal;
 use crate::ui::utilities::*;
 use crate::ui::windows::utilities::states::confirm_state::ConfirmState;
 use crate::ui::windows::workspace::states::server_form::ServerForm;
 use crate::ui::windows::workspace::states::server_test_connection::ServerTestConnection;
-use crate::ui::windows::workspace::states::setup_state;
 use crate::ui::windows::workspace::views::workspace_view;
 
 
@@ -19,8 +17,6 @@ pub struct WorkspaceWindow{
     pub logotipo: TextureHandle,
     pub isotipo: TextureHandle,
     pub style: StyleGlobal,
-    pub setup_state: setup_state::SetupState,
-    pub setup: system::setup::Setup,
     pub server_form: ServerForm,
     pub servers: Vec<Server>,
     pub server_test_connection: ServerTestConnection,
@@ -38,8 +34,6 @@ pub fn run(){
             .with_icon(icon),
         ..Default::default()
     };
-
-    system::setup::init_config(None);
 
     eframe::run_native(
         "WorldServers",
@@ -63,37 +57,16 @@ impl WorkspaceWindow {
     }
 
     fn new(ctx: &egui::Context) -> Self {
-        let setup= system::setup::load_config();
-        let setup_state= setup_state::SetupState::new(&setup);
         Self{
             logotipo: load_texture(ctx, style_global::LOGOTIPO_BYTES),
             isotipo: load_texture(ctx, style_global::ISOTIPO_BYTES),
-            setup_state,
             style: StyleGlobal::new(),
-            setup,
             server_form: ServerForm::new(),
             servers: server::manager::Server::get_servers(),
             server_test_connection: ServerTestConnection::new(),
             confirm: ConfirmState::new(),
             action: Arc::new(Mutex::new(Vec::new()))
         }
-    }
-
-    pub fn save_setup(&mut self) {
-        system::setup::save_config(& Setup{
-            central_host: self.setup_state.central_host.clone(),
-            central_port: self.setup_state.central_port,
-            configured: true
-        });
-        self.setup_state.show_setup= false;
-        self.setup= load_config();
-    }
-
-    pub fn cancel_setup(&mut self) {
-        self.setup_state.show_setup= false;
-        self.setup= load_config();
-        self.setup_state= setup_state::SetupState::new(&self.setup);
-
     }
 
     pub fn open_server_new_form(&mut self) {

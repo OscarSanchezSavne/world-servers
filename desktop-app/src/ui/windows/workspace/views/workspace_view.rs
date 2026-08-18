@@ -1,7 +1,7 @@
 use eframe::{egui::{self}};
 use egui::panel::Panel;
 
-use crate::ui::windows::{utilities::views::confirm_view, workspace::{views::{modal_server_form_view, modal_setup_view, modal_test_server_connection, table_servers}, workspace_window::WorkspaceWindow}};
+use crate::ui::windows::{utilities::views::confirm_view, workspace::{views::{modal_server_form_view, modal_test_server_connection, table_servers}, workspace_window::WorkspaceWindow}};
 
 pub fn render(
     ui: &mut egui::Ui, window: &mut WorkspaceWindow
@@ -45,13 +45,6 @@ pub fn render(
         })
         .show_inside(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(
-                        format!("{}:{}", window.setup.central_host, window.setup.central_port) 
-                    )
-                        .size(11.0)
-                        .color(window.style.color_gray_muted),
-                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(
                         egui::RichText::new("EN")
@@ -65,14 +58,6 @@ pub fn render(
                             .size(11.0)
                             .color(window.style.color_gray_muted),
                     );
-                    ui.add_space(8.0);
-                    if ui.button(
-                        egui::RichText::new("Setup")
-                            .size(11.0)
-                            .color(window.style.color_cyan_highlight),
-                    ).clicked() {
-                        window.setup_state.show_setup = true;
-                    }
                 });
             });
         });
@@ -88,7 +73,7 @@ pub fn render(
             let card_frame = egui::Frame {
                 fill: window.style.color_panel_bg,
                 corner_radius: egui::CornerRadius::same(12),
-                stroke: egui::Stroke::new(1.0, window.style.color_card_stroke),
+                stroke: egui::Stroke::new(1.0_f32, window.style.color_card_stroke),
                 shadow: egui::epaint::Shadow {
                     offset: [0, 2].into(),
                     blur: 12,
@@ -157,10 +142,6 @@ pub fn render(
             });
 
         });
-
-    if window.setup_state.show_setup {
-        modal_setup_view::render(ui, window);
-    }
 
     if window.server_form.show {
         modal_server_form_view::render(ui, window);

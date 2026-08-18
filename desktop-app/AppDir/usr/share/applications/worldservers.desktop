@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=WorldServers
+Comment=WorldServers desktop monitor
+Exec=worldservers
+Icon=worldservers
+Terminal=false
+Categories=Utility;

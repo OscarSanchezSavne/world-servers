@@ -1,0 +1,66 @@
+FROM debian:12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Rust build essentials
+    curl \
+    ca-certificates \
+    build-essential \
+    pkg-config \
+    # ssh2 / openssl
+    libssl-dev \
+    # Bevy: audio
+    libasound2-dev \
+    # Bevy: device / udev
+    libudev-dev \
+    # eframe/egui X11
+    libx11-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-xfixes0-dev \
+    libxkbcommon-dev \
+    libxkbcommon-x11-dev \
+    libwayland-dev \
+    # Vulkan/GL (Bevy/wgpu, se usa la librería de desarrollo para enlazar)
+    libvulkan-dev \
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libgles2-mesa-dev \
+    # FUSE para ejecutar linuxdeploy AppImage dentro del contenedor
+    fuse \
+    libfuse2 \
+    # utilidades de empaquetado
+    file \
+    # herramientas para el flujo de linuxdeploy
+    wget \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Rust (estable) con el profile mínimal
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    RUSTUP_VERSION=1.27.1 \
+    PATH=/usr/local/cargo/bin:$PATH
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain 1.96.0 \
+    && rustup --version \
+    && cargo --version \
+    && rustc --version
+
+# Instalar linuxdeploy y su plugin de AppImage (para empaquetar dentro de Debian 12)
+RUN mkdir -p /opt/linuxdeploy \
+    && wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+       -O /opt/linuxdeploy/linuxdeploy-x86_64.AppImage \
+    && wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage \
+       -O /opt/linuxdeploy/linuxdeploy-plugin-appimage-x86_64.AppImage \
+    && chmod +x /opt/linuxdeploy/linuxdeploy-x86_64.AppImage \
+    && chmod +x /opt/linuxdeploy/linuxdeploy-plugin-appimage-x86_64.AppImage \
+    && /opt/linuxdeploy/linuxdeploy-x86_64.AppImage --appimage-extract-and-run --version >/dev/null 2>&1 \
+    && ln -s /opt/linuxdeploy/linuxdeploy-x86_64.AppImage /usr/local/bin/linuxdeploy \
+    && ln -s /opt/linuxdeploy/linuxdeploy-plugin-appimage-x86_64.AppImage /usr/local/bin/linuxdeploy-plugin-appimage
+
+WORKDIR /app
+
+CMD ["/bin/bash"]
+
+ENTRYPOINT []

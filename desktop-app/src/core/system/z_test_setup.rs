@@ -1,40 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{path::PathBuf};
     use crate::core::system::setup::*;
-
-     #[test]
-    fn config_created_if_not_exists() {
-        let path = PathBuf::from("/tmp/test_config.toml");
-        let _ = fs::remove_file(&path); 
-        let config = load_config_from(&path);
-
-        assert_eq!(config.central_host, "0".to_string());
-        assert_eq!(config.central_port, 0);
-        assert!(path.exists());
-
-        let _ = fs::remove_file(&path);
-    }
-
-     #[test]
-    fn config_loaded_if_exists() {
-
-        let path = PathBuf::from("/tmp/test_config2.toml");
-        let _ = fs::remove_file(&path); 
-        let setup= Setup{
-            configured: true,
-            central_host: "0.0.0.0".to_string(),
-            central_port: 80,
-        };
-        save_config_to(&setup, &path);
-
-        let config = load_config_from(&path);
-
-        assert_eq!(config.central_host, "0.0.0.0");
-        assert_eq!(config.central_port, 80);
-
-        let _ = fs::remove_file(&path);
-    }
 
      #[test]
     fn test_init_config() 

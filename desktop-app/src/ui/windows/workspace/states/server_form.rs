@@ -6,6 +6,7 @@ use crate::{core::server::manager, ui::utilities::{ExecutionState, ProcessState}
 
 pub struct ServerForm{
     pub show: bool,
+    pub show_tutorial: bool,
     pub create: bool,
     pub uuid: Option<Uuid>,
     pub server_name: String,
@@ -28,6 +29,7 @@ impl ServerForm {
         Self {
             uuid: None,
             show: false,
+            show_tutorial: true,
             create: true,
             server_name: "".to_string(),
             server_ip: "".to_string(),
@@ -66,6 +68,7 @@ impl ServerForm {
         Self { 
             uuid: server.uuid, 
             show: false, 
+            show_tutorial: true,
             create: false, 
             server_name: server.server_name,
             server_ip: server.server_ip,

@@ -13,7 +13,6 @@ pub fn create(
         GltfAssetLabel::Scene(0).from_asset("gltf/hexagono.gltf"),
     );
 
-
     let mut new_cell_component= cell.clone();
     let entity= commands.spawn((
         WorldAssetRoot(hex_handle.clone()),

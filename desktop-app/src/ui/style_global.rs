@@ -1,7 +1,7 @@
 use eframe::egui::{self, Response, Vec2};
 
-pub const LOGOTIPO_BYTES: &[u8] = include_bytes!("../../../assets/images/logotipo.png");
-pub const ISOTIPO_BYTES: &[u8] = include_bytes!("../../assets/images/isotipo.png");
+pub const LOGOTIPO_BYTES: &[u8] = include_bytes!("../../AppDir/usr/share/worldservers/assets/images/logotipo.png");
+pub const ISOTIPO_BYTES: &[u8] = include_bytes!("../../AppDir/usr/share/worldservers/assets/images/isotipo.png");
 
 pub struct StyleGlobal {
     pub color_bg_deep: egui::Color32,
@@ -34,10 +34,6 @@ impl StyleGlobal {
             input_text: egui::Color32::from_rgb(215, 220, 232),
             line_space: 12.0
         }
-    }
-
-    pub fn text_input(&self, ui: &mut egui::Ui, label: &str, value: &mut String) -> Response {
-        self.text_input_with_hint(ui, label, value, "")
     }
 
     pub fn text_input_with_hint(
@@ -95,7 +91,7 @@ impl StyleGlobal {
         
         egui::Frame::NONE
             .fill(egui::Color32::from_rgb(10, 20, 45))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 100, 200)))
+            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(50, 100, 200)))
             .corner_radius(6)
             .inner_margin(egui::Margin::symmetric(12, 8))
             .show(ui, |ui| {
@@ -119,7 +115,7 @@ impl StyleGlobal {
     pub fn error_panel(&self, ui: &mut egui::Ui, error: &str) {
         egui::Frame::NONE
             .fill(egui::Color32::from_rgb(40, 10, 10))
-            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(180, 50, 50)))
+            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 50, 50)))
             .corner_radius(6)
             .inner_margin(egui::Margin::symmetric(12, 8))
             .show(ui, |ui| {

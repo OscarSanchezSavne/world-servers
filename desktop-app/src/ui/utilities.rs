@@ -36,7 +36,7 @@ pub struct TcpdumpPacket {
 
 
 pub fn load_favicon() -> egui::IconData {
-    let bytes = include_bytes!("../../assets/images/isotipo.png");
+    let bytes = include_bytes!("../../AppDir/usr/share/worldservers/assets/images/isotipo.png");
     let color_image = egui_extras::image::load_image_bytes(bytes)
         .expect("Failed to decode favicon");
     egui::IconData {
