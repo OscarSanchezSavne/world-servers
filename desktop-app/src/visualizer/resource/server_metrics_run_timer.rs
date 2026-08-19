@@ -16,7 +16,7 @@ impl ServerMetricsRunTimer {
     pub fn default() -> Self {
         let (tx, rx) = std::sync::mpsc::channel::<ServerMetrics>();
         Self{
-            timer: Timer::from_seconds(10.0, TimerMode::Repeating),
+            timer: Timer::from_seconds(30.0, TimerMode::Repeating),
             tx, 
             rx: Mutex::new(rx),
         }
