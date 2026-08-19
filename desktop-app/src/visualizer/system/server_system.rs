@@ -640,7 +640,7 @@ pub fn receive_metrics(
                 }
             }
             ServerMetrics::Error(_uuid, error)=> {
-                panic!("Error {}", error);
+                println!("Error receive_metrics: {}", error);
             }
         }
     }

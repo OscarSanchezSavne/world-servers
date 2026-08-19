@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="WorldServers is an open-source desktop application for monitoring remote Linux servers in real time through an interactive 3D world.">
+  <meta name="theme-color" content="#071220">
+  <title>WorldServers — Real-time Linux server monitoring in 3D</title>
+  <link rel="icon" type="image/png" href="./images/favicon.png">
+  <link rel="canonical" href="https://oscarsanchezsavne.github.io/world-servers/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="WorldServers">
+  <meta property="og:title" content="WorldServers — Real-time Linux server monitoring in 3D">
+  <meta property="og:description" content="Monitor remote Linux servers in real time through an interactive 3D world. CPU, memory, disk and network traffic at a glance.">
+  <meta property="og:image" content="./images/favicon.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="WorldServers — Real-time Linux server monitoring in 3D">
+  <meta name="twitter:description" content="Monitor remote Linux servers in real time through an interactive 3D world.">
+  <meta name="twitter:image" content="./images/favicon.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg fixed-top border-bottom border-secondary-subtle">
+    <div class="container">
+      <a class="navbar-brand brand" href="#top">World<span>Servers</span></a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="mainNav">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-2">
+          <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
+          <li class="nav-item"><a class="nav-link" href="#screenshots">Screenshots</a></li>
+          <li class="nav-item"><a class="nav-link" href="#requirements">Requirements</a></li>
+          <li class="nav-item"><a class="btn btn-outline-primary ms-lg-2" href="https://github.com/OscarSanchezSavne/world-servers" target="_blank" rel="noreferrer"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          <li class="nav-item"><a class="btn btn-primary" href="https://github.com/OscarSanchezSavne/world-servers/releases/latest" target="_blank" rel="noreferrer"><i class="bi bi-download me-1"></i> Download</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main id="top">
+    <section class="hero section-space">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-6">
+            <div class="eyebrow mb-3"><span class="dot"></span>Open source · Rust · Bevy</div>
+            <h1 class="display-3 fw-semibold lh-1 mb-4">Monitor your servers <span class="text-gradient">in a 3D world.</span></h1>
+            <p class="lead text-secondary mb-4">WorldServers is a desktop application for monitoring remote Linux servers in real time, combining infrastructure metrics, SSH connectivity and network traffic in an interactive 3D visualization.</p>
+            <div class="d-flex flex-wrap gap-2 mb-4">
+              <a class="btn btn-primary btn-lg" href="https://github.com/OscarSanchezSavne/world-servers/releases/latest" target="_blank" rel="noreferrer"><i class="bi bi-download me-2"></i>Download latest release</a>
+              <a class="btn btn-outline-secondary btn-lg" href="https://github.com/OscarSanchezSavne/world-servers" target="_blank" rel="noreferrer"><i class="bi bi-github me-2"></i>View source</a>
+            </div>
+            <div class="d-flex flex-wrap gap-4 small text-secondary">
+              <span><i class="bi bi-check2-circle text-success me-1"></i> CPU, RAM & disk</span>
+              <span><i class="bi bi-check2-circle text-success me-1"></i> Network traffic</span>
+              <span><i class="bi bi-check2-circle text-success me-1"></i> SSH monitoring</span>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="hero-shot"><img src="./images/monitor-servers2.png" class="img-fluid" alt="WorldServers 3D infrastructure visualization"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section-space section-panel">
+      <div class="container">
+        <div class="section-heading">
+          <span class="section-kicker">Features</span>
+          <h2>Infrastructure at a glance</h2>
+          <p>Focused on the information needed to understand server health and communication in real time.</p>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6 col-xl-3"><article class="feature-card h-100"><div class="feature-icon"><i class="bi bi-speedometer2"></i></div><h3>Live metrics</h3><p>Monitor CPU, memory and disk usage directly on each server node.</p></article></div>
+          <div class="col-md-6 col-xl-3"><article class="feature-card h-100"><div class="feature-icon orange"><i class="bi bi-arrow-left-right"></i></div><h3>Network traffic</h3><p>Visualize inbound, outbound and internal traffic between servers.</p></article></div>
+          <div class="col-md-6 col-xl-3"><article class="feature-card h-100"><div class="feature-icon green"><i class="bi bi-terminal"></i></div><h3>SSH connection</h3><p>Register Linux servers using SSH key or password authentication.</p></article></div>
+          <div class="col-md-6 col-xl-3"><article class="feature-card h-100"><div class="feature-icon purple"><i class="bi bi-box"></i></div><h3>Interactive 3D map</h3><p>Pan, zoom, rotate and inspect your infrastructure spatially.</p></article></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots" class="section-space">
+      <div class="container">
+        <div class="section-heading">
+          <span class="section-kicker">Screenshots</span>
+          <h2>See WorldServers in action</h2>
+          <p>From server registration to real-time infrastructure and traffic visualization.</p>
+        </div>
+        <div class="gallery-grid">
+          <a class="gallery-card gallery-wide" href="./images/monitor-servers.png" target="_blank" rel="noreferrer" aria-label="Infrastructure overview - full screenshot"><img src="./images/monitor-servers.png" alt="WorldServers infrastructure overview" loading="lazy"><span>Infrastructure overview</span></a>
+          <a class="gallery-card" href="./images/zoom-cell.png" target="_blank" rel="noreferrer" aria-label="Server metrics - full screenshot"><img src="./images/zoom-cell.png" alt="WorldServers server detail" loading="lazy"><span>Server metrics</span></a>
+          <a class="gallery-card" href="./images/rotate-world.png" target="_blank" rel="noreferrer" aria-label="3D navigation - full screenshot"><img src="./images/rotate-world.png" alt="WorldServers rotated 3D view" loading="lazy"><span>3D navigation</span></a>
+          <a class="gallery-card" href="./images/dashboard-main.png" target="_blank" rel="noreferrer" aria-label="Server dashboard - full screenshot"><img src="./images/dashboard-main.png" alt="WorldServers main dashboard" loading="lazy"><span>Server dashboard</span></a>
+          <a class="gallery-card" href="./images/register-server.png" target="_blank" rel="noreferrer" aria-label="Server registration - full screenshot"><img src="./images/register-server.png" alt="WorldServers register server form" loading="lazy"><span>Server registration</span></a>
+          <a class="gallery-card" href="./images/register-server-1.png" target="_blank" rel="noreferrer" aria-label="Server requirements - full screenshot"><img src="./images/register-server-1.png" alt="WorldServers server requirements" loading="lazy"><span>Server requirements</span></a>
+          <a class="gallery-card" href="./images/test-conection.png" target="_blank" rel="noreferrer" aria-label="Connection validation - full screenshot"><img src="./images/test-conection.png" alt="WorldServers SSH connection test log" loading="lazy"><span>Connection validation</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-space section-panel">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-5">
+            <span class="section-kicker">How it works</span>
+            <h2 class="mb-3">A visual layer over your Linux infrastructure</h2>
+            <p class="text-secondary mb-4">WorldServers connects to your registered machines over SSH, reads operating-system metrics and captures selected network traffic to render the current state of your infrastructure.</p>
+            <div class="stack-list">
+              <div><i class="bi bi-1-circle"></i><span>Register a remote Linux server.</span></div>
+              <div><i class="bi bi-2-circle"></i><span>Validate SSH access and required tools.</span></div>
+              <div><i class="bi bi-3-circle"></i><span>Read metrics and network activity.</span></div>
+              <div><i class="bi bi-4-circle"></i><span>Explore the infrastructure in the 3D world.</span></div>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="architecture-card">
+              <div class="architecture-node"><i class="bi bi-hdd-rack"></i><strong>Linux servers</strong><small>SSH · metrics · tcpdump</small></div>
+              <div class="architecture-arrow"><i class="bi bi-arrow-right"></i></div>
+              <div class="architecture-node active"><i class="bi bi-boxes"></i><strong>WorldServers</strong><small>Rust + Bevy</small></div>
+              <div class="architecture-arrow"><i class="bi bi-arrow-right"></i></div>
+              <div class="architecture-node"><i class="bi bi-bounding-box-circles"></i><strong>3D visualization</strong><small>health · traffic · topology</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements" class="section-space">
+      <div class="container">
+        <div class="section-heading">
+          <span class="section-kicker">Requirements</span>
+          <h2>Simple server-side requirements</h2>
+          <p>WorldServers uses standard Linux tools and SSH access.</p>
+        </div>
+        <div class="row g-3">
+          <div class="col-lg-7">
+            <div class="requirements-card h-100">
+              <ul class="list-unstyled mb-0 requirements-list">
+                <li><i class="bi bi-check-circle-fill"></i> Linux server with SSH access</li>
+                <li><i class="bi bi-check-circle-fill"></i> <code>tcpdump</code> for network traffic capture</li>
+                <li><i class="bi bi-check-circle-fill"></i> <code>iproute2</code> for interface detection</li>
+                <li><i class="bi bi-check-circle-fill"></i> Standard tools such as <code>top</code>, <code>free</code> and <code>df</code></li>
+                <li><i class="bi bi-check-circle-fill"></i> Passwordless sudo permission for <code>tcpdump</code></li>
+              </ul>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="terminal-card h-100">
+              <div class="terminal-head"><span></span><span></span><span></span></div>
+              <pre><code>apt-get update
+apt-get install -y tcpdump iproute2 sudo
+
+command -v tcpdump</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-space pt-0">
+      <div class="container">
+        <div class="cta">
+          <div><span class="section-kicker">Open source</span><h2 class="mb-2">Explore your infrastructure differently.</h2><p class="text-secondary mb-0">Download WorldServers or inspect the source code on GitHub.</p></div>
+          <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary btn-lg" href="https://github.com/OscarSanchezSavne/world-servers/releases/latest" target="_blank" rel="noreferrer"><i class="bi bi-download me-2"></i>Download</a>
+            <a class="btn btn-outline-secondary btn-lg" href="https://github.com/OscarSanchezSavne/world-servers" target="_blank" rel="noreferrer"><i class="bi bi-github me-2"></i>GitHub</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-top border-secondary-subtle py-4">
+    <div class="container d-flex flex-column flex-md-row justify-content-between gap-2 small text-secondary"><span>WorldServers</span><span>Built with Rust and Bevy.</span></div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" defer></script>
+</body>
+</html>
