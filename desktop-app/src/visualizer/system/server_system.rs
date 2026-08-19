@@ -554,11 +554,12 @@ pub fn start_capture_metrics(
 
 
 pub fn get_metrics(
+    mut commands: Commands,
     server_list: Query<&visualizer::component::servers::Servers>,
     time: Res<Time>,
     mut metrics_timer: ResMut<visualizer::resource::server_metrics_run_timer::ServerMetricsRunTimer>,
     query_servers: Query<
-        &visualizer::component::server::Server,
+        (Entity, &visualizer::component::server::Server),
         (With<visualizer::component::server::ServerReadyMetrics>, Without<visualizer::component::server::ObtainingServerMetrics>)
     >,
 )
@@ -571,7 +572,7 @@ pub fn get_metrics(
         return;
     };
 
-    for server_component in query_servers.iter() {
+    for (server_entity, server_component) in query_servers.iter() {
         
         let Some(core_server) = original_servers
             .list_original_servers
@@ -583,6 +584,9 @@ pub fn get_metrics(
         };
 
         let tx= metrics_timer.tx.clone();
+        commands
+            .entity(server_entity)
+            .insert(visualizer::component::server::ObtainingServerMetrics::default());
         core_server.async_get_metrics_avg(tx);
 
     }
@@ -590,10 +594,11 @@ pub fn get_metrics(
 }
 
 pub fn get_metrics_first(
+    mut commands: Commands,
     server_list: Query<&visualizer::component::servers::Servers>,
     metrics_timer: ResMut<visualizer::resource::server_metrics_run_timer::ServerMetricsRunTimer>,
     query_servers: Query<
-        &visualizer::component::server::Server,
+        (Entity, &visualizer::component::server::Server),
         Added<visualizer::component::server::ServerReadyMetrics>
     >,
 )
@@ -602,7 +607,7 @@ pub fn get_metrics_first(
         return;
     };
 
-    for server_component in query_servers.iter() {
+    for (server_entity, server_component) in query_servers.iter() {
         
         let Some(core_server) = original_servers
             .list_original_servers
@@ -614,6 +619,9 @@ pub fn get_metrics_first(
         };
 
         let tx= metrics_timer.tx.clone();
+        commands
+            .entity(server_entity)
+            .insert(visualizer::component::server::ObtainingServerMetrics::default());
         core_server.async_get_metrics_avg(tx);
 
     }
@@ -627,19 +635,30 @@ pub fn receive_metrics(
     query_servers: Query< &visualizer::component::server::Server >,
 )
 {
-    let metric= metrics_timer.rx.lock().unwrap().try_recv();
-    if let Ok(metrics) = metric {
+    let Ok(rx) = metrics_timer.rx.lock() else {
+        return;
+    };
+
+    while let Ok(metrics) = rx.try_recv() {
         match metrics {
             ServerMetrics::Done(server_uuid, cpu, ram, disk)=> {
                 if let Some(server) = query_servers.iter().find(|server| server.uuid == Some(server_uuid)){
-                    commands.entity(server.entity.unwrap()).insert(
-                        visualizer::component::server::ServerMetrics{
-                            cpu, ram, disk,
-                        }
-                    );
+                    if let Some(entity) = server.entity {
+                        commands.entity(entity)
+                            .insert(visualizer::component::server::ServerMetrics{
+                                cpu, ram, disk,
+                            })
+                            .remove::<visualizer::component::server::ObtainingServerMetrics>();
+                    }
                 }
             }
-            ServerMetrics::Error(_uuid, error)=> {
+            ServerMetrics::Error(uuid, error)=> {
+                if let Some(server) = query_servers.iter().find(|server| server.uuid == Some(uuid)) {
+                    if let Some(entity) = server.entity {
+                        commands.entity(entity)
+                            .remove::<visualizer::component::server::ObtainingServerMetrics>();
+                    }
+                }
                 println!("Error receive_metrics: {}", error);
             }
         }

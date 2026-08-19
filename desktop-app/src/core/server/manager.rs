@@ -6,6 +6,8 @@ use uuid::Uuid;
 
 use crate::{core::system::{self, crypto, setup}, ui::utilities::{self, ExecutionState, ServerMetrics, ServerTraffic}};
 
+type SshResult<T> = Result<T, String>;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Server{
@@ -146,7 +148,7 @@ impl Server {
         tx.send(ExecutionState::Message(server_uuid, "Start connection".to_string())).unwrap();
 
         tx.send(ExecutionState::Message(server_uuid, "Connected to server".to_string())).unwrap();
-        let session= self.open_session(Some(&tx));
+        let session= self.open_session(Some(&tx)).unwrap_or_else(|error| panic!("{}", error));
         let mut channel = session.channel_session().unwrap();
         let command = "command -v tcpdump"; 
         channel.exec(&command).unwrap();
@@ -214,8 +216,14 @@ impl Server {
     }
 
     pub fn run_tcpdump(&self, tx: &Sender<ServerTraffic>, inbound: bool) {
-        let session = self.open_session(None);
         let server_uuid = self.uuid.unwrap().clone();
+        let session = match self.open_session(None) {
+            Ok(session) => session,
+            Err(error) => {
+                let _ = tx.send(ServerTraffic::Error(server_uuid, error));
+                return;
+            }
+        };
 
         let command = if inbound {
             r#"sudo -n tcpdump -i $(ip -o -4 route show to default | awk '{print $5}') -nn -tt -l inbound and not port 22"#
@@ -279,19 +287,18 @@ impl Server {
                         tx.send(ServerTraffic::Package(
                             server_uuid,
                             utilities::TcpdumpPacket {src_ip, dst_ip, size, inbound, internal: None},
-                        )).unwrap();
+                        )).ok();
                     }
                 }
                 Err(e) => {
-                    tx.send(ServerTraffic::Error(server_uuid, format!("tcpdump read error: {}", e))).unwrap();
+                    let _ = tx.send(ServerTraffic::Error(server_uuid, format!("tcpdump read error: {}", e)));
                     break;
                 }
             }
         }
 
-
-
-        channel.wait_close().unwrap();
+        let _ = channel.close();
+        let _ = channel.wait_close();
 
         println!("{} tcpdump finished", server_uuid);
     }
@@ -315,32 +322,38 @@ impl Server {
         });
     }
 
-    fn open_session(&self, tx: Option<&Sender<ExecutionState>>) -> Session {
+    fn open_session(&self, tx: Option<&Sender<ExecutionState>>) -> SshResult<Session> {
         let server_uuid = self.uuid.unwrap().clone();
         let send_channel = |msg: &str| {
             if let Some(channel) = tx {
-                channel.send(ExecutionState::Message(server_uuid, msg.to_string())).unwrap();
+                channel.send(ExecutionState::Message(server_uuid, msg.to_string())).ok();
             }
         };
 
-        let tcp = TcpStream::connect_timeout(
-            &format!("{}:{}", self.server_ip, self.server_port).parse().unwrap(),
-            Duration::from_secs(10)
-        ).expect("Connection timed out. Server did not  respond");
+        let address = format!("{}:{}", self.server_ip, self.server_port)
+            .parse()
+            .map_err(|e| format!("Invalid server address: {}", e))?;
 
-        let mut session = Session::new().expect("Failed to create SSH session");
+        let tcp = TcpStream::connect_timeout(
+            &address,
+            Duration::from_secs(10)
+        ).map_err(|e| format!("Connection timed out or server did not respond: {}", e))?;
+
+        let mut session = Session::new()
+            .map_err(|e| format!("Failed to create SSH session: {}", e))?;
         
         send_channel("SSH session created");
 
         session.set_tcp_stream(tcp);
-        session.handshake().expect("SSH handshake failed. Check the server address");
+        session.handshake()
+            .map_err(|e| format!("SSH handshake failed. Check the server address: {}", e))?;
         send_channel("SSH handshake completed");
 
         if self.use_password {
             session.userauth_password(
                 &self.ssh_user,
                 &self.password,
-            ).expect("Password authentication failed. Check your credentials");
+            ).map_err(|e| format!("Password authentication failed. Check your credentials: {}", e))?;
             send_channel("Password authentication successful");
         }else{
             let passphrase = if self.use_passphrase{
@@ -359,24 +372,21 @@ impl Server {
                 &private_key_path,
                 public_key,
                 passphrase,
-            ).unwrap_or_else(|error| {
-                panic!(
-                    "{}",
-                    private_key_auth_error(&private_key_path, public_key, passphrase.is_some(), error)
-                )
-            });
+            ).map_err(|error| {
+                private_key_auth_error(&private_key_path, public_key, passphrase.is_some(), error)
+            })?;
             send_channel("SSH authentication successful");
         }
 
         if !session.authenticated() {
-            panic!("Authentication rejected by server");
+            return Err("Authentication rejected by server".to_string());
         }
-        session
+        Ok(session)
     }
 
 
-    pub fn get_metrics_avg(&self) -> (f32, f32, f32) {
-        let session = self.open_session(None);
+    pub fn get_metrics_avg(&self) -> SshResult<(f32, f32, f32)> {
+        let session = self.open_session(None)?;
 
         // Una sola ejecución: CPU, RAM, Discos
         let command = r#"
@@ -397,12 +407,16 @@ impl Server {
         }'
         "#;
 
-        let mut channel = session.channel_session().unwrap();
-        channel.exec(command).unwrap();
+        let mut channel = session.channel_session()
+            .map_err(|e| format!("Unable to open metrics SSH channel: {}", e))?;
+        channel.exec(command)
+            .map_err(|e| format!("Unable to start metrics command: {}", e))?;
 
         let mut output = String::new();
-        channel.read_to_string(&mut output).unwrap();
-        channel.wait_close().unwrap();
+        channel.read_to_string(&mut output)
+            .map_err(|e| format!("Unable to read metrics output: {}", e))?;
+        let _ = channel.close();
+        let _ = channel.wait_close();
 
         let values: Vec<f32> = output
             .lines()
@@ -410,18 +424,18 @@ impl Server {
             .collect();
 
         if values.len() < 3 {
-            return (0.0, 0.0, 0.0);
+            return Ok((0.0, 0.0, 0.0));
         }
 
         let cpu = values[0] / 100.0;
         let ram = values[1];
         let disk = values[2];
 
-        (
+        Ok((
             ((cpu * 100.0).round() / 100.0),
             ((ram * 100.0).round() / 100.0),
             ((disk * 100.0).round() / 100.0),
-        )
+        ))
     }
 
 
@@ -432,16 +446,12 @@ impl Server {
             setup::set_config_prefix(prefix);
 
             let sender_result= sender.clone();
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.get_metrics_avg()
-            }));
-
-            let outcome = match result {
+            let outcome = match self.get_metrics_avg() {
                 Ok((cpu, ram, disk)) => {
                     ServerMetrics::Done(server_uuid, cpu, ram, disk)
                 },
-                Err(e) => {
-                    ServerMetrics::Error(server_uuid, utilities::parse_error(e))
+                Err(error) => {
+                    ServerMetrics::Error(server_uuid, error)
                 }
             };
             if let Err(e) = sender_result.send(outcome) {
