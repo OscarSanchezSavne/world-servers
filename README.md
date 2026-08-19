@@ -73,6 +73,7 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 rm -rf desktop-app/AppDir/usr/lib/*
 
 # Generate the AppImage with linuxdeploy
+rm /app/desktop-app/AppDir/WorldServers-x86_64.deb12.AppImage
 linuxdeploy --appdir desktop-app/AppDir \
   --executable desktop-app/AppDir/usr/bin/worldservers \
   --desktop-file desktop-app/AppDir/usr/share/applications/worldservers.desktop \
