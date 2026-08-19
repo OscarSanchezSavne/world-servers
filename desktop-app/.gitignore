@@ -1,5 +1,6 @@
 /target
 /.config
 AppDir/*.AppImage
+AppDirWindows
 AppDir/usr/bin/*
 AppDir/usr/lib/*

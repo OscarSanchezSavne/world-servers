@@ -84,6 +84,30 @@ The resulting AppImage is placed at `desktop-app/AppDir/WorldServers-x86_64.deb1
 
 ---
 
+## Building the Windows Portable App
+
+The Windows build is exported to `desktop-app/AppDirWindows`.
+
+```powershell
+cd desktop-app
+cargo build --release
+
+# Recreate the Windows portable directory
+Remove-Item AppDirWindows -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force AppDirWindows
+
+# Copy the executable and runtime assets
+Copy-Item target\release\desktop-app.exe AppDirWindows\WorldServers.exe
+Copy-Item AppDir\usr\share\worldservers\assets AppDirWindows\assets -Recurse
+
+Run the app from:
+
+```powershell
+AppDirWindows\WorldServers.exe
+```
+
+---
+
 ## Persistence
 
 - `.config/servers.toml` — registered servers (encrypted).
