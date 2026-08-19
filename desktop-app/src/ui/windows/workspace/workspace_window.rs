@@ -1,4 +1,3 @@
-use std::os::unix::process::CommandExt;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, TextureHandle};
@@ -172,14 +171,8 @@ impl WorkspaceWindow {
     }
 
     pub fn launch_visualizer_and_exit(&self, ctx: &egui::Context) {
-        let self_path = std::env::current_exe().unwrap();
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-
-        let err = std::process::Command::new(self_path)
-        .arg("--visualizer")
-        .exec();
-    
-        panic!("exec failed: {}", err);
+        crate::core::process::relaunch_current_process(&["--visualizer"]);
     }
 
 }

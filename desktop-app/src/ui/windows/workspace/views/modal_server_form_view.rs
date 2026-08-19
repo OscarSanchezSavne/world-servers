@@ -301,7 +301,7 @@ apt-get install -y tcpdump iproute2 sudo"#
                     } else {
                         let mut private_key_path = window.server_form.private_key_path.clone();
                         if window.style.text_input_with_hint(
-                            ui, "Path to your private SSH key", &mut private_key_path, "e.g., ~/.ssh/id_rsa"
+                            ui, "Path to your private SSH key", &mut private_key_path, "e.g., ~/.ssh/id_rsa or C:/Users/User/.ssh/id_rsa"
                         ).changed() {
                             window.server_form.private_key_path = private_key_path;
                         }

@@ -1,5 +1,3 @@
-use std::os::unix::process::CommandExt;
-
 use bevy::ecs::system::{Query, ResMut};
 use bevy_egui::{egui, EguiContexts};
 use bevy::prelude::*;
@@ -81,10 +79,8 @@ pub fn update(
                         egui::Layout::right_to_left(egui::Align::Center),
                         |ui| {
                             if ui.button("Exit").clicked() {
-                                let self_path = std::env::current_exe().unwrap();
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                                let err = std::process::Command::new(self_path).exec();
-                                panic!("exec failed: {}", err);
+                                crate::core::process::relaunch_current_process(&[]);
                             }
                         },
                     );

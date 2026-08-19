@@ -35,6 +35,24 @@ use crate::{core::{server::manager::{Server, expand_path}, system::{crypto, setu
     }
 
     #[test]
+    fn test_expand_windows_absolute_path() {
+        let expected_path= expand_path(r"C:\Users\User\.ssh\id_rsa");
+        assert_eq!(
+            expected_path,
+            PathBuf::from_str(r"C:\Users\User\.ssh\id_rsa").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_expand_trims_quotes() {
+        let expected_path= expand_path(r#""C:\Users\User\.ssh\id_rsa""#);
+        assert_eq!(
+            expected_path,
+            PathBuf::from_str(r"C:\Users\User\.ssh\id_rsa").unwrap()
+        );
+    }
+
+    #[test]
     fn test_validate_returns_first_error_when_multiple_fields_empty() {
         let server = Server::default();
         let err = server.validate().unwrap_err();

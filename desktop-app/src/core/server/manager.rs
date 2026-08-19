@@ -1,4 +1,4 @@
-use std::{io::Read, net::TcpStream, sync::mpsc::{Sender}, thread, time::Duration};
+use std::{io::Read, net::TcpStream, path::{Path, PathBuf}, sync::mpsc::{Sender}, thread, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use ssh2::{ExtendedData, Session};
@@ -123,7 +123,10 @@ impl Server {
             }
             let expanded = expand_path(&self.private_key_path);
             if !expanded.exists() {
-                return Err(format!("SSH key file not found at: {}", self.private_key_path));
+                return Err(format!(
+                    "SSH key file not found at: {}",
+                    expanded.display()
+                ));
             }
             if self.use_passphrase {
                 if self.passphrase.trim().is_empty() {
@@ -344,10 +347,24 @@ impl Server {
                 Some(self.passphrase.as_str())
             }else { None };
 
-            session.userauth_pubkey_file(
-                &self.ssh_user, None, 
-                &expand_path(&self.private_key_path), passphrase,
-            ).expect("SSH authentication failed. Check your private ssh key.");
+            let private_key_path = expand_path(&self.private_key_path);
+            let public_key_path = public_key_path_for(&private_key_path);
+            let public_key = public_key_path
+                .as_deref()
+                .filter(|path| path.exists());
+
+            authenticate_with_private_key(
+                &session,
+                &self.ssh_user,
+                &private_key_path,
+                public_key,
+                passphrase,
+            ).unwrap_or_else(|error| {
+                panic!(
+                    "{}",
+                    private_key_auth_error(&private_key_path, public_key, passphrase.is_some(), error)
+                )
+            });
             send_channel("SSH authentication successful");
         }
 
@@ -572,12 +589,178 @@ impl ValidatedServer {
 
 
 pub(crate) fn expand_path(key_path: &str) -> std::path::PathBuf {
-    if key_path.starts_with('~') && let Some(home) = std::env::var_os("HOME") {
-        let mut path = std::path::PathBuf::from(home);
-        let rest = key_path[1..].trim_start_matches('/');
-        path.push(rest);
-        path
+    let key_path = key_path.trim().trim_matches(['"', '\'']);
+
+    if let Some(rest) = key_path.strip_prefix('~') {
+        if let Some(home) = home_dir() {
+            let mut path = home;
+            let rest = rest.trim_start_matches(['/', '\\']);
+
+            if !rest.is_empty() {
+                path.push(rest);
+            }
+
+            return path;
+        }
+    }
+
+    std::path::PathBuf::from(key_path)
+}
+
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .or_else(|| {
+            let drive = std::env::var_os("HOMEDRIVE")?;
+            let path = std::env::var_os("HOMEPATH")?;
+            let mut home = std::ffi::OsString::from(drive);
+            home.push(path);
+            Some(home)
+        })
+        .map(std::path::PathBuf::from)
+}
+
+fn public_key_path_for(private_key_path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let file_name = private_key_path.file_name()?;
+    let mut public_file_name = file_name.to_os_string();
+    public_file_name.push(".pub");
+    Some(private_key_path.with_file_name(public_file_name))
+}
+
+fn authenticate_with_private_key(
+    session: &Session,
+    username: &str,
+    private_key_path: &Path,
+    public_key_path: Option<&Path>,
+    passphrase: Option<&str>,
+) -> Result<(), ssh2::Error> {
+    let file_auth = session.userauth_pubkey_file(
+        username,
+        public_key_path,
+        private_key_path,
+        passphrase,
+    );
+
+    if file_auth.is_ok() || !is_openssh_private_key(private_key_path) {
+        return file_auth;
+    }
+
+    let Some(converted_key) = convert_openssh_key_to_temp_pem(private_key_path, passphrase) else {
+        return file_auth;
+    };
+
+    session.userauth_pubkey_file(
+        username,
+        public_key_path,
+        converted_key.path(),
+        passphrase,
+    )
+}
+
+fn private_key_auth_error(
+    private_key_path: &Path,
+    public_key_path: Option<&Path>,
+    passphrase_enabled: bool,
+    error: ssh2::Error,
+) -> String {
+    let mut details = vec![
+        format!("SSH authentication failed for key: {}", private_key_path.display()),
+        format!("libssh2 error: {}", error),
+        format!(
+            "public key file: {}",
+            public_key_path
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "not found next to private key".to_string())
+        ),
+        format!(
+            "passphrase: {}",
+            if passphrase_enabled { "enabled" } else { "disabled" }
+        ),
+    ];
+
+    if let Some(hint) = private_key_format_hint(private_key_path) {
+        details.push(hint);
+    }
+
+    details.join("\n")
+}
+
+fn private_key_format_hint(private_key_path: &Path) -> Option<String> {
+    let first_line = std::fs::read_to_string(private_key_path)
+        .ok()?
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    match first_line.as_str() {
+        "-----BEGIN OPENSSH PRIVATE KEY-----" => Some(
+            "key format: OpenSSH. If this keeps failing on Windows, convert a copy to PEM with `ssh-keygen -p -m PEM -f <key_path>` or create a PEM RSA key.".to_string()
+        ),
+        "-----BEGIN RSA PRIVATE KEY-----"
+        | "-----BEGIN EC PRIVATE KEY-----"
+        | "-----BEGIN DSA PRIVATE KEY-----" => Some("key format: PEM".to_string()),
+        line if line.starts_with("PuTTY-User-Key-File-") => Some(
+            "key format: PuTTY PPK. Export it as an OpenSSH/PEM private key before using it here.".to_string()
+        ),
+        "" => Some("key format: private key file appears empty or unreadable".to_string()),
+        _ => Some(format!("key format: unrecognized first line `{}`", first_line)),
+    }
+}
+
+fn is_openssh_private_key(private_key_path: &Path) -> bool {
+    first_private_key_line(private_key_path)
+        .as_deref()
+        == Some("-----BEGIN OPENSSH PRIVATE KEY-----")
+}
+
+fn first_private_key_line(private_key_path: &Path) -> Option<String> {
+    std::fs::read_to_string(private_key_path)
+        .ok()?
+        .lines()
+        .next()
+        .map(|line| line.trim().to_string())
+}
+
+struct TempPemKey {
+    path: PathBuf,
+}
+
+impl TempPemKey {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempPemKey {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn convert_openssh_key_to_temp_pem(private_key_path: &Path, passphrase: Option<&str>) -> Option<TempPemKey> {
+    let temp_path = std::env::temp_dir().join(format!("worldservers-{}.pem", Uuid::new_v4()));
+    std::fs::copy(private_key_path, &temp_path).ok()?;
+
+    let passphrase = passphrase.unwrap_or("");
+    let output = std::process::Command::new("ssh-keygen")
+        .arg("-p")
+        .arg("-m")
+        .arg("PEM")
+        .arg("-f")
+        .arg(&temp_path)
+        .arg("-P")
+        .arg(passphrase)
+        .arg("-N")
+        .arg(passphrase)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        Some(TempPemKey { path: temp_path })
     } else {
-        std::path::PathBuf::from(key_path)
+        let _ = std::fs::remove_file(temp_path);
+        None
     }
 }
